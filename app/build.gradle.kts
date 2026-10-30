@@ -41,6 +41,12 @@ android {
     }
 
     signingConfigs {
+        getByName("debug") {
+            storeFile = file("fork-debug.jks")
+            storePassword = "android"
+            keyAlias = "forkdebug"
+            keyPassword = "android"
+        }
         create("release") {
             if (hasReleaseSigning) {
                 storeFile = file(signingStoreFile.get())
@@ -52,6 +58,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
