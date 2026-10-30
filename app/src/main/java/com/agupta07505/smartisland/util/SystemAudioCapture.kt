@@ -20,14 +20,14 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Audio source for the neon visualizer. Priority 1: raw PCM16 sent by the music app over UDP to
- * 127.0.0.1:4214 (tag 0x01 "rate|channels", 0x02 + PCM16 interleaved, 0x03 transition), analysed here with
+ * 127.0.0.1:4215 (tag 0x01 "rate|channels", 0x02 + PCM16 interleaved, 0x03 transition), analysed here with
  * a 2048-point FFT at ~60 Hz. Fallback: android.media.audiofx.Visualizer on session 0 (needs RECORD_AUDIO).
  */
 object SystemAudioCapture {
     private const val TAG = "SystemAudioCapture"
     const val BANDS = 14
     const val WAVE_POINTS = 48
-    const val UDP_PORT = 4214
+    const val UDP_PORT = 4215
     const val UDP_ENABLED = true
     private const val FFT_N = 2048
     private const val HOP = 768
