@@ -47,7 +47,9 @@ class HotspotPollMonitor(
                 clearCard()
             } else {
                 val via = detect()
-                if (via != null && !posted) {
+                val present = repository.notifications.value.any { it.key == KEY }
+                if (via != null && (!posted || !present)) {
+                    if (posted) AppLogRecorder.w(TAG, "Hotspot card vanished, posting it again")
                     posted = true
                     AppLogRecorder.i(TAG, "Hotspot ON via $via")
                     repository.postNotification(

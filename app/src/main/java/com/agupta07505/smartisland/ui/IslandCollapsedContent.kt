@@ -325,34 +325,97 @@ fun IslandCollapsedContent(
 @Composable
 internal fun HotspotCollapsedGlyph(notification: IslandNotification?, settings: SmartIslandSettings = SmartIslandSettings.Default) {
     val hotspotColor = Color(settings.hotspotColor)
+    val glow by rememberInfiniteTransition(label = "hotspotGlow").animateFloat(
+        initialValue = 0.14f,
+        targetValue = 0.34f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "hotspotGlowAlpha"
+    )
     Box(
         modifier = Modifier
             .size(22.dp)
             .clip(CircleShape)
-            .background(hotspotColor.copy(alpha = 0.2f)),
+            .background(hotspotColor.copy(alpha = glow)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = Icons.Rounded.WifiTethering,
-            contentDescription = "Hotspot",
-            tint = hotspotColor,
-            modifier = Modifier.size(15.dp)
-        )
+        androidx.compose.foundation.Canvas(modifier = Modifier.size(22.dp)) {
+            val w = 8.dp.toPx()
+            val h = 14.dp.toPx()
+            val left = (size.width - w) / 2f
+            val top = (size.height - h) / 2f
+            drawRoundRect(
+                color = hotspotColor,
+                topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(w, h),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.2.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+            )
+            drawCircle(
+                color = hotspotColor,
+                radius = 0.9.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(size.width / 2f, top + h - 3.dp.toPx())
+            )
+        }
     }
 }
 
 @Composable
 private fun HotspotCollapsedRight(notification: IslandNotification?, settings: SmartIslandSettings) {
-    val countText = remember(notification?.text, notification?.title) {
-        HotspotUtil.parseDeviceCount(notification?.title, notification?.text).toString()
+    val count = remember(notification?.text, notification?.title) {
+        HotspotUtil.parseDeviceCount(notification?.title, notification?.text)
     }
+    if (count > 0) {
+        Text(
+            text = count.toString(),
+            color = Color(settings.hotspotColor),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    } else {
+        HotspotWaves(color = Color(settings.hotspotColor))
+    }
+}
 
-    Text(
-        text = countText,
-        color = Color(settings.hotspotColor),
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold
+/** Ondas que salen del celular: tres arcos que crecen y se desvanecen, desfasados. */
+@Composable
+private fun HotspotWaves(color: Color, modifier: Modifier = Modifier) {
+    val t by rememberInfiniteTransition(label = "hotspotWaves").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "hotspotWavePhase"
     )
+    androidx.compose.foundation.Canvas(
+        modifier = modifier
+            .size(width = 18.dp, height = 22.dp)
+            .clip(androidx.compose.ui.graphics.RectangleShape)
+    ) {
+        val maxR = size.width
+        val cy = size.height / 2f
+        val stroke = 1.6.dp.toPx()
+        for (i in 0..2) {
+            val phase = (t + i / 3f) % 1f
+            val r = maxR * (0.2f + 0.8f * phase)
+            drawArc(
+                color = color.copy(alpha = (1f - phase) * 0.95f),
+                startAngle = -45f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(-r, cy - r),
+                size = androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            )
+        }
+    }
 }
 
 @Composable

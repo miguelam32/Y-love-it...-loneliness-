@@ -28,7 +28,12 @@ object IslandPriority {
     }
 
     fun rank(n: IslandNotification): Int =
-        rank(n.mode) + if (n.mode == IslandMode.Music && !n.mediaIsPlaying) 1 else 0
+        when {
+            // Solo para ordenar: el hotspot queda detras de una cancion sonando y delante de una pausada.
+            n.mode == IslandMode.Hotspot -> 31
+            n.mode == IslandMode.Music && !n.mediaIsPlaying -> rank(n.mode) + 2
+            else -> rank(n.mode)
+        }
 
     /**
      * Cards that fall back to the idle cutout after [IslandTimings.STATIC_IDLE_TIMEOUT_MS] once nothing is actively
