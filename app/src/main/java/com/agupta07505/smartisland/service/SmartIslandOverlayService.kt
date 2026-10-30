@@ -120,6 +120,7 @@ class SmartIslandOverlayService : AccessibilityService() {
     private var connectivityMonitor: com.agupta07505.smartisland.util.ConnectivityEventMonitor? = null
     private var wiredDeviceMonitor: com.agupta07505.smartisland.util.WiredDeviceEventMonitor? = null
     private var transferSpeedMonitor: com.agupta07505.smartisland.util.TransferSpeedMonitor? = null
+    private var hotspotPollMonitor: com.agupta07505.smartisland.util.HotspotPollMonitor? = null
     private var faceUnlockWatcher: com.agupta07505.smartisland.util.FaceUnlockWatcher? = null
 
     private val serviceScope = kotlinx.coroutines.CoroutineScope(
@@ -838,6 +839,16 @@ class SmartIslandOverlayService : AccessibilityService() {
             }
         ).also { it.start() }
 
+        hotspotPollMonitor = com.agupta07505.smartisland.util.HotspotPollMonitor(
+            context = this,
+            scope = serviceScope,
+            repository = notificationRepository,
+            enabled = {
+                val s = viewModel.displaySettings.value
+                s.enabled && s.isEventEnabled(com.agupta07505.smartisland.model.IslandEvent.HOTSPOT.id)
+            }
+        ).also { it.start() }
+
         faceUnlockWatcher = com.agupta07505.smartisland.util.FaceUnlockWatcher(
             serviceScope,
             onUnlock = { type, _ ->
@@ -1141,6 +1152,8 @@ class SmartIslandOverlayService : AccessibilityService() {
         wiredDeviceMonitor = null
         transferSpeedMonitor?.stop()
         transferSpeedMonitor = null
+        hotspotPollMonitor?.stop()
+        hotspotPollMonitor = null
         faceUnlockWatcher?.stop()
         faceUnlockWatcher = null
 

@@ -20,6 +20,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -417,7 +418,7 @@ internal fun NotificationGlyph(notification: IslandNotification?, settings: Smar
 }
 
 @Composable
-private fun AudioVisualizer(
+private fun FakeAudioVisualizer(
     isPlaying: Boolean,
     color: Color,
     modifier: Modifier = Modifier
@@ -1235,3 +1236,49 @@ fun BluetoothCollapsedRight(
 private val COLLAPSED_TRANSLATION_MAX_DP = 32.dp
 private const val LEFT_SLOT_PADDING_START_DP = 8
 private const val RIGHT_SLOT_PADDING_END_DP = 12
+
+@Composable
+private fun AudioVisualizer(isPlaying: Boolean, color: Color, modifier: Modifier = Modifier) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+        ctx, android.Manifest.permission.RECORD_AUDIO
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    if (granted && com.agupta07505.smartisland.util.SystemAudioCapture.isAvailable()) {
+        RealAudioVisualizer(isPlaying, color, modifier)
+    } else {
+        FakeAudioVisualizer(isPlaying, color, modifier)
+    }
+}
+
+@Composable
+private fun RealAudioVisualizer(isPlaying: Boolean, color: Color, modifier: Modifier = Modifier) {
+    androidx.compose.runtime.DisposableEffect(isPlaying) {
+        if (isPlaying) com.agupta07505.smartisland.util.SystemAudioCapture.start()
+        onDispose { if (isPlaying) com.agupta07505.smartisland.util.SystemAudioCapture.stop() }
+    }
+    val levels by com.agupta07505.smartisland.util.SystemAudioCapture.levels.collectAsState()
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        levels.forEachIndexed { index, raw ->
+            val target = if (isPlaying) (0.15f + raw * 0.85f) else 0.2f
+            val scale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = target,
+                animationSpec = tween(durationMillis = 90, easing = FastOutSlowInEasing),
+                label = "real_bar_$index"
+            )
+            Box(
+                modifier = Modifier
+                    .size(width = 3.dp, height = 14.dp)
+                    .graphicsLayer {
+                        scaleY = scale
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
+                    }
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color)
+            )
+        }
+    }
+}
