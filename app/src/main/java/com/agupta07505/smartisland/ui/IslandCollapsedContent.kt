@@ -1315,33 +1315,5 @@ private fun AudioVisualizer(isPlaying: Boolean, color: Color, modifier: Modifier
 
 @Composable
 private fun RealAudioVisualizer(isPlaying: Boolean, color: Color, modifier: Modifier = Modifier) {
-    androidx.compose.runtime.DisposableEffect(isPlaying) {
-        if (isPlaying) com.agupta07505.smartisland.util.SystemAudioCapture.start()
-        onDispose { if (isPlaying) com.agupta07505.smartisland.util.SystemAudioCapture.stop() }
-    }
-    val levels by com.agupta07505.smartisland.util.SystemAudioCapture.levels.collectAsState()
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        levels.forEachIndexed { index, raw ->
-            val target = if (isPlaying) (0.15f + raw * 0.85f) else 0.2f
-            val scale by androidx.compose.animation.core.animateFloatAsState(
-                targetValue = target,
-                animationSpec = tween(durationMillis = 90, easing = FastOutSlowInEasing),
-                label = "real_bar_$index"
-            )
-            Box(
-                modifier = Modifier
-                    .size(width = 3.dp, height = 14.dp)
-                    .graphicsLayer {
-                        scaleY = scale
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
-                    }
-                    .clip(RoundedCornerShape(1.dp))
-                    .background(color)
-            )
-        }
-    }
+    NeonSpectrum(isPlaying = isPlaying, modifier = modifier)
 }
