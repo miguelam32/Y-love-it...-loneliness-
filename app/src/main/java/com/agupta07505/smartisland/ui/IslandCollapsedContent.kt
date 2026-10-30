@@ -1306,7 +1306,7 @@ private fun AudioVisualizer(isPlaying: Boolean, color: Color, modifier: Modifier
     val granted = androidx.core.content.ContextCompat.checkSelfPermission(
         ctx, android.Manifest.permission.RECORD_AUDIO
     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    if (granted && com.agupta07505.smartisland.util.SystemAudioCapture.isAvailable()) {
+    if (granted || com.agupta07505.smartisland.util.SystemAudioCapture.UDP_ENABLED) {
         RealAudioVisualizer(isPlaying, color, modifier)
     } else {
         FakeAudioVisualizer(isPlaying, color, modifier)
