@@ -152,7 +152,7 @@ object SystemAudioCapture {
         val socket = try {
             DatagramSocket(null).apply {
                 reuseAddress = true
-                bind(InetSocketAddress(InetAddress.getLoopbackAddress(), UDP_PORT))
+                bind(InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), UDP_PORT))
                 soTimeout = 500
             }
         } catch (e: Throwable) {
