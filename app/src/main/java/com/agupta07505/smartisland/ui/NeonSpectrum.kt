@@ -1,9 +1,9 @@
 package com.agupta07505.smartisland.ui
 
-import android.annotation.SuppressLint
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -11,146 +11,23 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.agupta07505.smartisland.util.AppLogRecorder
+import com.agupta07505.smartisland.util.PcmAnalyzer
 import com.agupta07505.smartisland.util.SystemAudioCapture
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.sin
-import kotlinx.coroutines.delay
 
-private const val NEEDLES = 48
-private const val RIBBON_PTS = 24
-
-/**
- * AGSL (GPU fragment shader, Android 13+): needle spectrum with glowing tips, two glowing audio ribbons,
- * a perspective floor grid and a fading reflection. Resolution-independent: everything scales with the
- * height of the drawing area, so the pill can be made bigger later and it just gets sharper.
- */
-private const val NEON_AGSL = """
-uniform float2 iRes;
-uniform float iTime;
-uniform float iEnergy;
-uniform float needles[48];
-uniform float wavepts[24];
-
-float3 pal(float t) {
-  t = clamp(t, 0.0, 1.0);
-  float3 c0 = float3(0.80, 0.22, 1.00);
-  float3 c1 = float3(0.30, 0.40, 1.00);
-  float3 c2 = float3(0.10, 0.88, 1.00);
-  float3 a = mix(c0, c1, clamp(t * 2.0, 0.0, 1.0));
-  float3 b = mix(c1, c2, clamp(t * 2.0 - 1.0, 0.0, 1.0));
-  return mix(a, b, step(0.5, t));
-}
-
-float waveAt(float xn) {
-  float x = xn * 23.0;
-  float o = 0.0;
-  for (int i = 0; i < 24; i++) {
-    o += wavepts[i] * clamp(1.0 - abs(x - float(i)), 0.0, 1.0);
-  }
-  return o;
-}
-
-half4 main(float2 fc) {
-  float s = iRes.y / 64.0;
-  float y0 = iRes.y * 0.64;
-  float hn = y0 - iRes.y * 0.05;
-  float2 p = fc;
-  float xn = p.x / iRes.x;
-  float drift = 0.06 * sin(iTime * 0.7);
-  float3 palx = pal(xn + drift);
-  float3 col = float3(0.0);
-  float up = y0 - p.y;
-  float dn = p.y - y0;
-
-  for (int k = 0; k < 48; k++) {
-    float xk = (float(k) + 0.5) / 48.0 * iRes.x;
-    float dx = p.x - xk;
-    if (abs(dx) > 6.0 * s) { continue; }
-    float hk = needles[k] * hn;
-    float dx2 = dx * dx;
-    float core = exp(-dx2 / (0.30 * s * s));
-    float glow = exp(-dx2 / (4.0 * s * s)) * 0.22;
-    float inside = smoothstep(-1.2 * s, 0.8 * s, up) * smoothstep(-1.5 * s, 1.0 * s, hk - up);
-    float along = 0.55 + 0.45 * clamp(up / max(hk, 0.001), 0.0, 1.0);
-    float a = (core + glow) * inside * along;
-    float hr = hk * 0.5;
-    float refl = smoothstep(-0.5 * s, 1.0 * s, dn) * smoothstep(-1.5 * s, 1.0 * s, hr - dn)
-      * (1.0 - clamp(dn / max(hr, 0.001), 0.0, 1.0)) * 0.30;
-    a += (core + glow * 0.5) * refl;
-    float ty = p.y - (y0 - hk);
-    float tip = exp(-(dx2 + ty * ty) / (1.2 * s * s)) * step(2.0 * s, hk) * 0.8;
-    col += (a + tip) * palx;
-  }
-
-  float amp = iRes.y * 0.15;
-  float e = 0.8 + 0.7 * iEnergy;
-  float d1 = abs(p.y - (y0 + amp * waveAt(xn)));
-  col += (exp(-(d1 * d1) / (0.72 * s * s)) + exp(-(d1 * d1) / (10.2 * s * s)) * 0.38)
-    * pal(xn + drift) * e;
-  float d2 = abs(p.y - (y0 + amp * 0.7 * waveAt(1.0 - xn)));
-  col += (exp(-(d2 * d2) / (0.72 * s * s)) + exp(-(d2 * d2) / (10.2 * s * s)) * 0.38)
-    * pal(xn + 0.18 + drift) * 0.55 * e;
-
-  float tt = dn / (iRes.y - y0);
-  if (tt > 0.02) {
-    float z = 1.0 / (tt * 0.9 + 0.1);
-    float gh = abs(fract(z * 0.55 - iTime * 0.4) - 0.5);
-    float lh = smoothstep(0.40, 0.5, gh);
-    float xx = (xn - 0.5) / (tt * 0.85 + 0.15);
-    float gv = abs(fract(xx * 5.0) - 0.5);
-    float lv = smoothstep(0.42, 0.5, gv);
-    float g = max(lh, lv) * pow(max(1.0 - tt, 0.0001), 1.2) * smoothstep(0.0, 0.25, tt)
-      * 0.16 * (0.7 + iEnergy);
-    col += g * palx * 0.9;
-  }
-
-  col = float3(1.0) - exp(-col * 1.5);
-  col = clamp(col, float3(0.0), float3(1.0));
-  float alpha = max(col.r, max(col.g, col.b));
-  return half4(half3(col), half(alpha));
-}
-"""
-
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class NeonShader {
-    val shader = RuntimeShader(NEON_AGSL)
-    val needles = FloatArray(NEEDLES)
-    val ribbon = FloatArray(RIBBON_PTS)
-}
-
-private fun needleNoise(i: Int): Float {
-    val v = sin(i * 12.9898f + 4.1414f) * 43758.547f
-    return 0.45f + 0.55f * (v - floor(v))
-}
-
-/**
- * Neon audio visualizer for the music pill. GPU shader on Android 13+, plain Canvas otherwise (or if the
- * shader fails). Fed by SystemAudioCapture (PCM over UDP from the music app, Visualizer as fallback).
- */
-@SuppressLint("NewApi")
+/** DEEP FIELD style PCM ribbon + ERB spectrum + beat effects, drawn by an AGSL shader (API 33+), Canvas fallback. */
 @Composable
 fun NeonSpectrum(
     isPlaying: Boolean,
@@ -158,174 +35,197 @@ fun NeonSpectrum(
     width: Dp = 56.dp,
     height: Dp = 32.dp
 ) {
-    DisposableEffect(isPlaying) {
-        if (isPlaying) SystemAudioCapture.start()
-        onDispose { if (isPlaying) SystemAudioCapture.stop() }
+    DisposableEffect(Unit) {
+        SystemAudioCapture.start()
+        onDispose { SystemAudioCapture.stop() }
     }
-
-    val bands = SystemAudioCapture.BANDS
-    val points = SystemAudioCapture.WAVE_POINTS
-    val level = remember { FloatArray(bands) }
-    val peak = remember { FloatArray(bands) }
-    val wave = remember { FloatArray(points) }
-    val noise = remember { FloatArray(NEEDLES) { needleNoise(it) } }
-    var now by remember { mutableLongStateOf(0L) }
-    val playing by rememberUpdatedState(isPlaying)
-
-    val gpu = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            runCatching { NeonShader() }
-                .onFailure { AppLogRecorder.w("NeonSpectrum", "AGSL shader unavailable: ${it.message}") }
-                .getOrNull()
-        } else {
-            null
-        }
+    val live by animateFloatAsState(if (isPlaying) 1f else 0.3f, label = "neonLive")
+    val data = remember { FloatArray(PcmAnalyzer.OUT_SIZE) }
+    val env = remember { FloatArray(PcmAnalyzer.COLS * 2) }
+    val bands = remember { FloatArray(PcmAnalyzer.NB) }
+    var tick by remember { mutableLongStateOf(0L) }
+    var t0 by remember { mutableLongStateOf(0L) }
+    val shader = remember {
+        if (Build.VERSION.SDK_INT >= 33) runCatching { makeShader() }.getOrNull() else null
     }
-    val gpuOk = remember { booleanArrayOf(true) }
+    val failed = remember { BoolBox(false) }
 
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
-            val active = playing || level.any { it > 0.01f } || wave.any { abs(it) > 0.01f }
-            if (!active) {
-                delay(150)
-                last = 0L
-                continue
+            androidx.compose.runtime.withFrameNanos { n ->
+                val dt = if (last == 0L) 0.016f else ((n - last) / 1e9f).coerceIn(0.001f, 0.1f)
+                last = n
+                if (t0 == 0L) t0 = n
+                SystemAudioCapture.snapshot(data, dt)
+                tick = n
             }
-            val t = withFrameNanos { it }
-            val dt = if (last == 0L) 0.016f else ((t - last) / 1_000_000_000f).coerceIn(0.001f, 0.1f)
-            last = t
-            val srcS = SystemAudioCapture.spectrum.value
-            val srcW = SystemAudioCapture.wave.value
-            val attack = 1f - exp(-dt * 30f)
-            val decay = 1f - exp(-dt * 8f)
-            for (i in 0 until bands) {
-                val target = if (playing) srcS[i] else 0f
-                level[i] += (target - level[i]) * (if (target > level[i]) attack else decay)
-                peak[i] = max(level[i], peak[i] - dt * 0.8f)
-            }
-            val follow = 1f - exp(-dt * 22f)
-            for (i in 0 until points) {
-                val target = if (playing) srcW[i] else 0f
-                wave[i] += (target - wave[i]) * follow
-            }
-            now = t
         }
     }
 
-    Canvas(modifier = modifier.size(width = width, height = height)) {
-        val t = now / 1_000_000_000f
-        var drawn = false
-        if (gpu != null && gpuOk[0]) {
+    Canvas(modifier.size(width, height)) {
+        val n = tick
+        System.arraycopy(data, 0, env, 0, env.size)
+        System.arraycopy(data, PcmAnalyzer.BANDS_OFF, bands, 0, bands.size)
+        val time = (n - t0) / 1e9f
+        var done = false
+        if (shader != null && !failed.value && Build.VERSION.SDK_INT >= 33) {
             try {
-                var energy = 0f
-                for (i in 0 until bands) energy += level[i]
-                energy /= bands
-                for (k in 0 until NEEDLES) {
-                    val pos = k / (NEEDLES - 1f) * (bands - 1)
-                    val i0 = pos.toInt().coerceAtMost(bands - 2)
-                    val f = pos - i0
-                    val v = level[i0] * (1f - f) + level[i0 + 1] * f
-                    val shimmer = 1f + 0.08f * sin(t * 9f + k * 1.7f)
-                    gpu.needles[k] = (v * noise[k] * shimmer * 1.2f).coerceIn(0f, 1f)
-                }
-                for (i in 0 until RIBBON_PTS) {
-                    gpu.ribbon[i] = ((wave[2 * i] + wave[2 * i + 1]) * 0.8f).coerceIn(-1f, 1f)
-                }
-                gpu.shader.setFloatUniform("iRes", size.width, size.height)
-                gpu.shader.setFloatUniform("iTime", t)
-                gpu.shader.setFloatUniform("iEnergy", energy)
-                gpu.shader.setFloatUniform("needles", gpu.needles)
-                gpu.shader.setFloatUniform("wavepts", gpu.ribbon)
-                drawRect(brush = ShaderBrush(gpu.shader))
-                drawn = true
-            } catch (e: Throwable) {
-                gpuOk[0] = false
-                AppLogRecorder.w("NeonSpectrum", "AGSL draw failed, using canvas: ${e.message}")
+                drawShader(shader, data, env, bands, time, live)
+                done = true
+            } catch (_: Throwable) {
+                failed.value = true
             }
         }
-        if (!drawn) drawNeonFallback(level, peak, wave, t, bands, points)
+        if (!done) drawFallback(env, bands, data[PcmAnalyzer.AUX_OFF + 3], live)
     }
 }
 
-private fun DrawScope.drawNeonFallback(
-    level: FloatArray,
-    peak: FloatArray,
-    wave: FloatArray,
-    t: Float,
-    bands: Int,
-    points: Int
+private class BoolBox(var value: Boolean)
+
+@RequiresApi(33)
+private fun makeShader(): RuntimeShader = RuntimeShader(DEEP_AGSL)
+
+@RequiresApi(33)
+private fun DrawScope.drawShader(
+    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, time: Float, live: Float
 ) {
-    val w = size.width
-    val h = size.height
-    val base = h * 0.62f
-    val up = base - 2.dp.toPx()
-    val down = h - base - 1.dp.toPx()
-    val gap = 1.6.dp.toPx()
-    val barW = (w - gap * (bands - 1)) / bands
-    val corner = CornerRadius(barW / 2f)
-    val brush = Brush.horizontalGradient(
-        colors = listOf(
-            Color.hsv(300f + 30f * sin(t * 0.9f), 0.85f, 1f),
-            Color.hsv(265f + 25f * sin(t * 0.9f + 1f), 0.85f, 1f),
-            Color.hsv(225f + 20f * sin(t * 0.9f + 2f), 0.85f, 1f),
-            Color.hsv(190f + 15f * sin(t * 0.9f + 3f), 0.85f, 1f)
-        ),
-        startX = 0f,
-        endX = w
+    rs.setFloatUniform("uRes", size.width, size.height)
+    rs.setFloatUniform("uT", time, live)
+    rs.setFloatUniform(
+        "uAux",
+        data[PcmAnalyzer.AUX_OFF], data[PcmAnalyzer.AUX_OFF + 1],
+        data[PcmAnalyzer.AUX_OFF + 2], data[PcmAnalyzer.AUX_OFF + 3]
     )
-
-    for (i in 0 until bands) {
-        val x = i * (barW + gap)
-        val bh = (level[i] * up).coerceAtLeast(1.dp.toPx())
-        drawRoundRect(
-            brush = brush,
-            topLeft = Offset(x, base + 1.dp.toPx()),
-            size = Size(barW, level[i] * down * 0.55f),
-            cornerRadius = corner,
-            alpha = 0.22f
-        )
-        drawRoundRect(
-            brush = brush,
-            topLeft = Offset(x - barW * 0.6f, base - bh - 1.dp.toPx()),
-            size = Size(barW * 2.2f, bh + 2.dp.toPx()),
-            cornerRadius = CornerRadius(barW),
-            alpha = 0.16f,
-            blendMode = BlendMode.Plus
-        )
-        drawRoundRect(
-            brush = brush,
-            topLeft = Offset(x, base - bh),
-            size = Size(barW, bh),
-            cornerRadius = corner
-        )
-        if (peak[i] > 0.04f) {
-            drawRoundRect(
-                color = Color.White.copy(alpha = 0.85f),
-                topLeft = Offset(x, base - peak[i] * up - 2.5.dp.toPx()),
-                size = Size(barW, 1.2.dp.toPx()),
-                cornerRadius = CornerRadius(0.6.dp.toPx())
-            )
-        }
-    }
-
-    val path = Path()
-    val amp = 5.dp.toPx()
-    for (i in 0 until points) {
-        val x = w * i / (points - 1)
-        val y = base + (wave[i] * 1.6f).coerceIn(-1f, 1f) * amp
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    drawPath(
-        path = path, brush = brush, alpha = 0.14f, blendMode = BlendMode.Plus,
-        style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-    drawPath(
-        path = path, brush = brush, alpha = 0.3f, blendMode = BlendMode.Plus,
-        style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
-    drawPath(
-        path = path, brush = brush,
-        style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-    )
+    rs.setFloatUniform("uEnv", env)
+    rs.setFloatUniform("uBand", bands)
+    drawRect(brush = ShaderBrush(rs))
 }
+
+private fun DrawScope.drawFallback(env: FloatArray, bands: FloatArray, beat: Float, live: Float) {
+    val w = size.width; val h = size.height
+    val cols = PcmAnalyzer.COLS
+    val colors = listOf(Color(0xFF1AF2FF), Color(0xFF386BFF), Color(0xFFAD47FF), Color(0xFFFF38C7))
+    // bars
+    val bw = w / bands.size
+    for (i in bands.indices) {
+        val bh = bands[i] * h * 0.5f * live
+        drawRect(
+            colors[(i * colors.size / bands.size).coerceIn(0, 3)].copy(alpha = 0.35f),
+            topLeft = Offset(i * bw + 0.5f, h - bh), size = androidx.compose.ui.geometry.Size(bw - 1f, bh)
+        )
+    }
+    // ribbon filaments
+    for (k in 0 until 5) {
+        val t = k / 4f * 2f - 1f
+        val path = Path()
+        for (i in 0 until cols) {
+            val lo = env[i * 2]; val hi = env[i * 2 + 1]
+            val c = 0.5f * (lo + hi) * 0.55f
+            val hh = maxOf(0.5f * (hi - lo), 0.05f) * 0.78f
+            val taper = sin(Math.PI.toFloat() * i / (cols - 1)).coerceAtLeast(0f)
+            val y = (0.5f - 0.5f * (c * taper + t * hh * taper) * live) * h
+            val x = i * w / (cols - 1)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        val col = colors[k % 4]
+        drawPath(path, col.copy(alpha = 0.25f), style = Stroke(width = 4f, cap = StrokeCap.Round), blendMode = BlendMode.Plus)
+        drawPath(path, col.copy(alpha = 0.9f), style = Stroke(width = 1.4f, cap = StrokeCap.Round), blendMode = BlendMode.Plus)
+    }
+    if (beat > 0.2f) drawRect(Color(0xFFAD47FF).copy(alpha = beat * 0.15f))
+}
+
+private fun sin(x: Float): Float = kotlin.math.sin(x)
+
+private const val DEEP_AGSL = """
+uniform float2 uRes;
+uniform float2 uT;
+uniform float4 uAux;
+uniform float2 uEnv[40];
+uniform float uBand[24];
+
+float3 pal(float t) {
+    t = 1.0 - abs(fract(t * 0.5) * 2.0 - 1.0);
+    float3 a = float3(0.10, 0.95, 1.00);
+    float3 b = float3(0.22, 0.42, 1.00);
+    float3 c = float3(0.68, 0.28, 1.00);
+    float3 d = float3(1.00, 0.22, 0.78);
+    float3 r = mix(a, b, smoothstep(0.0, 0.34, t));
+    r = mix(r, c, smoothstep(0.30, 0.64, t));
+    r = mix(r, d, smoothstep(0.60, 0.95, t));
+    return r;
+}
+
+float hash(float2 p) {
+    return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
+}
+
+float3 ribbon(float x, float y) {
+    float lo = 0.0;
+    float hi = 0.0;
+    float cx = x * 39.0;
+    for (int i = 0; i < 40; i++) {
+        float w = max(0.0, 1.0 - abs(cx - float(i)));
+        lo += uEnv[i].x * w;
+        hi += uEnv[i].y * w;
+    }
+    float taper = pow(clamp(sin(3.14159 * clamp(x, 0.0, 1.0)), 0.0, 1.0), 0.6);
+    float c = 0.5 * (lo + hi) * 0.55;
+    float h = max(0.5 * (hi - lo), 0.05) * 0.78 * taper;
+    float px = 1.0 / uRes.y;
+    float3 acc = float3(0.0);
+    for (int k = 0; k < 7; k++) {
+        float fk = float(k);
+        float t = fk / 6.0 * 2.0 - 1.0;
+        float rip = sin(x * 24.0 + uT.x * 3.4 + fk * 1.7) * 0.10 * (0.25 + uAux.y * 1.2);
+        float yk = c * taper + t * h * (1.0 + rip * 2.0) + rip * 0.12 * taper;
+        float d = (y - yk) / (px * 2.0);
+        float core = exp(-d * d * 1.1);
+        float glow = exp(-d * d * 0.05) * 0.22;
+        float3 col = pal(x * 0.55 + (t * 0.5 + 0.5) * 0.35 + uT.x * 0.04 + uAux.x * 0.15);
+        acc += col * (core * 0.95 + glow);
+    }
+    return acc;
+}
+
+half4 main(float2 fc) {
+    float2 uv = fc / uRes;
+    float x = uv.x;
+    float y = (0.5 - uv.y) * 2.0;
+    float beat = uAux.w;
+    float off = 0.003 + beat * 0.010;
+    float3 rc = ribbon(x + off, y);
+    float3 gc = ribbon(x, y);
+    float3 bc = ribbon(x - off, y);
+    float3 col = float3(rc.x, gc.y, bc.z);
+
+    float bandV = 0.0;
+    float bx = x * 23.0;
+    for (int i = 0; i < 24; i++) {
+        float w = max(0.0, 1.0 - abs(bx - float(i)));
+        bandV += uBand[i] * w;
+    }
+    float fromBottom = (1.0 - uv.y);
+    float cell = abs(fract(x * 24.0) - 0.5);
+    float barMask = smoothstep(0.5, 0.30, cell);
+    float bh = bandV * 0.55;
+    float inside = smoothstep(bh, bh - 0.10, fromBottom);
+    float3 bcol = pal(x * 0.6 + 0.1 + fromBottom * 0.25);
+    col += bcol * inside * barMask * (0.12 + 0.18 * (1.0 - fromBottom / max(bh, 0.05)));
+
+    float2 gp = floor(float2(uv.x * 64.0, uv.y * 36.0));
+    float hs = hash(gp);
+    float tw = 0.5 + 0.5 * sin(uT.x * (2.0 + hs * 5.0) + hs * 40.0);
+    float near = exp(-pow(y * 1.4, 2.0) * 2.0);
+    float glit = step(0.965, hs) * tw * near * (0.5 + beat * 2.2);
+    col += pal(hs * 3.0 + x) * glit;
+
+    col += pal(x * 0.5 + uT.x * 0.05) * (beat * beat) * 0.22 * exp(-y * y * 1.5);
+
+    col = float3(1.0) - exp(-col * 1.35);
+    float edge = smoothstep(0.0, 0.07, x) * smoothstep(1.0, 0.93, x);
+    col *= edge * uT.y;
+    float a = clamp(max(col.x, max(col.y, col.z)), 0.0, 1.0);
+    return half4(half3(col), half(a));
+}
+"""
