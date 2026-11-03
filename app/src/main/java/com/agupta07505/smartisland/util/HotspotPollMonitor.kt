@@ -83,7 +83,7 @@ class HotspotPollMonitor(
         val iface = runCatching {
             val all = NetworkInterface.getNetworkInterfaces()?.let { Collections.list(it) }.orEmpty()
             all.firstOrNull { ni ->
-                ni.isUp && !ni.isLoopback && AP_NAMES.matches(ni.name) &&
+                ni.isUp && !ni.isLoopback && (if (flag == null) AP_NAMES else AP_STRICT).matches(ni.name) &&
                     Collections.list(ni.inetAddresses).any { it is Inet4Address }
             }?.name
         }.getOrNull()
@@ -99,6 +99,7 @@ class HotspotPollMonitor(
         private const val TAG = "HotspotPollMonitor"
         const val KEY = "system_hotspot_poll"
         private const val POLL_MS = 3_000L
+        private val AP_STRICT = Regex("^(ap\\d+|swlan\\d+|softap\\d+)$")
         private val AP_NAMES = Regex("^(ap\\d+|swlan\\d+|softap\\d+|wlan[1-9]\\d*)$")
     }
 }
