@@ -27,7 +27,8 @@ class PcmAnalyzer(private val rate: Int) {
         const val COL_MS = 6.0
         const val BANDS_OFF = COLS * 2
         const val AUX_OFF = BANDS_OFF + NB
-        const val OUT_SIZE = AUX_OFF + 5
+        const val BEAT_OFF = AUX_OFF + 5
+        const val OUT_SIZE = BEAT_OFF + COLS
     }
 
     private val fc = DoubleArray(NB)
@@ -42,6 +43,7 @@ class PcmAnalyzer(private val rate: Int) {
     private var colCount = 0
     private var cMin = 1f; private var cMax = -1f
     private val ringMin = FloatArray(COLS); private val ringMax = FloatArray(COLS)
+    private val ringBeat = FloatArray(COLS)
     private var ringPos = 0
 
     private var pk = 0.2
@@ -100,7 +102,8 @@ class PcmAnalyzer(private val rate: Int) {
 
     private fun endColumn() {
         if (cMin > cMax) { cMin = 0f; cMax = 0f }
-        ringMin[ringPos] = cMin; ringMax[ringPos] = cMax
+        val wcol = ringPos
+        ringMin[ringPos] = cMin; ringMax[ringPos] = cMax; ringBeat[ringPos] = 0f
         ringPos = (ringPos + 1) % COLS
         val amp = max(abs(cMin), abs(cMax)).toDouble()
         pk = if (amp > pk) pk + (amp - pk) * 0.3 else pk * 0.99985
@@ -129,6 +132,7 @@ class PcmAnalyzer(private val rate: Int) {
         sinceBeat += COL_MS
         if (flux > m + 1.5 * sd + 6.0 && sinceBeat > 170.0 && level > 0.12f) {
             beat = min(1.0, 0.55 + (flux - m) / 60.0)
+            ringBeat[wcol] = beat.toFloat()
             sinceBeat = 0.0
         }
         beat *= exp(-COL_MS / 170.0)
@@ -142,6 +146,7 @@ class PcmAnalyzer(private val rate: Int) {
             val idx = (ringPos + k) % COLS
             out[k * 2] = (ringMin[idx] * g).coerceIn(-1f, 1f)
             out[k * 2 + 1] = (ringMax[idx] * g).coerceIn(-1f, 1f)
+            out[BEAT_OFF + k] = ringBeat[idx]
         }
         val ka = 1 - exp(-dt / 0.025f); val kr = 1 - exp(-dt / 0.14f)
         for (i in 0 until NB) {

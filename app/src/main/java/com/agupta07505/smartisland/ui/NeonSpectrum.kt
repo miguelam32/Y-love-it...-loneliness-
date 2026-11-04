@@ -43,6 +43,7 @@ fun NeonSpectrum(
     val data = remember { FloatArray(PcmAnalyzer.OUT_SIZE) }
     val env = remember { FloatArray(PcmAnalyzer.COLS * 2) }
     val bands = remember { FloatArray(PcmAnalyzer.NB) }
+    val beats = remember { FloatArray(PcmAnalyzer.COLS) }
     var tick by remember { mutableLongStateOf(0L) }
     var t0 by remember { mutableLongStateOf(0L) }
     val shader = remember {
@@ -67,11 +68,12 @@ fun NeonSpectrum(
         val n = tick
         System.arraycopy(data, 0, env, 0, env.size)
         System.arraycopy(data, PcmAnalyzer.BANDS_OFF, bands, 0, bands.size)
+        System.arraycopy(data, PcmAnalyzer.BEAT_OFF, beats, 0, beats.size)
         val time = (n - t0) / 1e9f
         var done = false
         if (shader != null && !failed.value && Build.VERSION.SDK_INT >= 33) {
             try {
-                drawShader(shader, data, env, bands, time, live)
+                drawShader(shader, data, env, bands, beats, time, live)
                 done = true
             } catch (_: Throwable) {
                 failed.value = true
@@ -88,7 +90,7 @@ private fun makeShader(): RuntimeShader = RuntimeShader(DEEP_AGSL)
 
 @RequiresApi(33)
 private fun DrawScope.drawShader(
-    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, time: Float, live: Float
+    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, beats: FloatArray, time: Float, live: Float
 ) {
     rs.setFloatUniform("uRes", size.width, size.height)
     rs.setFloatUniform("uT", time, live)
@@ -99,6 +101,7 @@ private fun DrawScope.drawShader(
     )
     rs.setFloatUniform("uEnv", env)
     rs.setFloatUniform("uBand", bands)
+    rs.setFloatUniform("uBeat", beats)
     drawRect(brush = ShaderBrush(rs))
 }
 
@@ -143,6 +146,7 @@ uniform float2 uT;
 uniform float4 uAux;
 uniform float2 uEnv[40];
 uniform float uBand[24];
+uniform float uBeat[40];
 
 float3 pal(float t) {
     t = 1.0 - abs(fract(t * 0.5) * 2.0 - 1.0);
@@ -163,11 +167,13 @@ float hash(float2 p) {
 float3 ribbon(float x, float y) {
     float lo = 0.0;
     float hi = 0.0;
+    float bm = 0.0;
     float cx = x * 39.0;
     for (int i = 0; i < 40; i++) {
         float w = max(0.0, 1.0 - abs(cx - float(i)));
         lo += uEnv[i].x * w;
         hi += uEnv[i].y * w;
+        bm = max(bm, uBeat[i] * max(0.0, 1.0 - abs(cx - float(i)) * 0.8));
     }
     float taper = pow(clamp(sin(3.14159 * clamp(x, 0.0, 1.0)), 0.0, 1.0), 0.6);
     float c = 0.5 * (lo + hi) * 0.55;
@@ -183,8 +189,17 @@ float3 ribbon(float x, float y) {
         float core = exp(-d * d * 1.1);
         float glow = exp(-d * d * 0.05) * 0.22;
         float3 col = pal(x * 0.55 + (t * 0.5 + 0.5) * 0.35 + uT.x * 0.04 + uAux.x * 0.15);
-        acc += col * (core * 0.95 + glow);
+        float outer = step(0.99, abs(t));
+        float dxp = (fract(x * 13.0 + 0.5) - 0.5) * uRes.x / 13.0;
+        float node = exp(-(dxp * dxp + d * d) * 0.8) * outer * 0.9;
+        acc += col * (core * 0.95 + glow) + float3(0.8, 0.95, 1.0) * node;
     }
+    float span = h + 0.25;
+    float vb = smoothstep(span, span * 0.5, abs(y - c * taper));
+    float mk = bm * bm * vb;
+    acc += float3(1.0, 0.92, 0.75) * mk * 0.9;
+    float dm = (y - c * taper) / (px * 2.0);
+    acc += float3(1.0, 1.0, 1.0) * bm * exp(-dm * dm * 0.35) * 0.8;
     return acc;
 }
 
@@ -194,9 +209,12 @@ half4 main(float2 fc) {
     float y = (0.5 - uv.y) * 2.0;
     float beat = uAux.w;
     float off = 0.003 + beat * 0.010;
-    float3 rc = ribbon(x + off, y);
-    float3 gc = ribbon(x, y);
-    float3 bc = ribbon(x - off, y);
+    float gl = step(0.5, beat) * beat;
+    float sl = floor(uv.y * 9.0);
+    float xg = x + (hash(float2(sl, floor(uT.x * 24.0))) - 0.5) * 0.07 * gl;
+    float3 rc = ribbon(xg + off, y);
+    float3 gc = ribbon(xg, y);
+    float3 bc = ribbon(xg - off, y);
     float3 col = float3(rc.x, gc.y, bc.z);
 
     float bandV = 0.0;
@@ -212,6 +230,13 @@ half4 main(float2 fc) {
     float inside = smoothstep(bh, bh - 0.10, fromBottom);
     float3 bcol = pal(x * 0.6 + 0.1 + fromBottom * 0.25);
     col += bcol * inside * barMask * (0.12 + 0.18 * (1.0 - fromBottom / max(bh, 0.05)));
+
+    float vg = fromBottom + 0.12;
+    float gx = abs(fract((x - 0.5) / vg * 1.6 + 0.5) - 0.5);
+    float gy = abs(fract(1.0 / vg * 0.7 - uT.x * (0.5 + uAux.x)) - 0.5);
+    float grid = (smoothstep(0.05, 0.0, gx * vg) + smoothstep(0.06, 0.0, gy)) * smoothstep(0.42, 0.0, fromBottom);
+    col += pal(x * 0.5 + 0.55) * grid * (0.10 + uAux.x * 0.25);
+    col *= 0.93 + 0.07 * sin(uv.y * uRes.y * 3.14159);
 
     float2 gp = floor(float2(uv.x * 64.0, uv.y * 36.0));
     float hs = hash(gp);
