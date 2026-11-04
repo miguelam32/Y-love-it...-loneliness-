@@ -1,0 +1,75 @@
+package com.agupta07505.smartisland.ui
+
+internal object DeepShaderB {
+    const val SRC = """
+half4 main(float2 fc) {
+    float2 u = float2(fc.x / uRes.x, 1.0 - fc.y / uRes.y);
+    float e1 = uImp.x;
+    float e2 = uImp.y;
+    float2 ic = uImp.zw;
+    float ia = uK.x;
+    float gs = uK.y * 7.0 + floor(uT.x * 20.0);
+    float2 sa = float2(uRes.x / uRes.y, 1.0);
+    float2 dv = (u - float2(0.5, 0.4)) * sa;
+    float rr = length(dv);
+    float rd = (rr - 0.06 - ia * 1.1) / (0.05 + 0.05 * ia);
+    float ring = exp(-rd * rd) * exp(-ia * 3.5) * uK.z * step(0.001, e2);
+    float2 rw = dv / (rr + 0.001) / sa * ring;
+    u += rw * 0.05;
+    if (e2 > 0.01) {
+        float2 k1 = floor(u * float2(5.0, 11.0));
+        float2 k2 = floor(u * float2(11.0, 29.0));
+        float b1 = step(1.0 - 0.5 * e2, hash(k1 + gs * 3.1));
+        float b2 = step(1.0 - 0.35 * e2, hash(k2 + gs * 7.7));
+        u.x += b1 * (hash(k1 + gs) - 0.5) * 0.5 * e2 + b2 * (hash(k2 + gs + 2.0) - 0.5) * 0.3 * e2;
+        u.y += b2 * (hash(k2 + gs + 4.0) - 0.5) * 0.08 * e2;
+    }
+    float off = 0.003 + uAux.w * 0.010 + e2 * 0.04;
+    float bsr = e2 * 0.07;
+    float3 col = float3(0.0);
+    if (bsr > 0.004) {
+        float2 rv = (ic - u) * bsr;
+        for (int i = 0; i < 5; i++) {
+            float2 q = u + rv * float(i);
+            col += scene(float2(q.x, 1.0 - q.y), off);
+        }
+        col = col / 5.0;
+    } else {
+        col = scene(float2(u.x, 1.0 - u.y), off);
+    }
+    float2 dc = (u - ic) * sa;
+    float sd = length(dc);
+    col += float3(0.35, 0.12, 0.8) * e2 * exp(-sd * 2.2) * 0.8;
+    if (e2 > 0.02) {
+        float ca = hash(float2(gs, 9.0)) * 3.14159;
+        float2 cd = float2(cos(ca), sin(ca));
+        float al = dot(dc, cd);
+        float pr = dot(dc, float2(-cd.y, cd.x));
+        float c1 = exp(-pr * pr / 0.0006);
+        float c2 = exp(-abs(pr) * 18.0) * 0.4;
+        float ms = smoothstep(1.6, 0.8, abs(al));
+        col += (float3(1.0, 0.95, 1.0) * c1 + float3(0.62, 0.35, 1.0) * c2) * ms * e2 * 1.2;
+        col += float3(1.0, 0.9, 1.0) * exp(-sd * sd * 60.0) * 2.0 * e2;
+    }
+    col = float3(1.0) - exp(-col * 1.35);
+    float ks = clamp(e1 * 0.8, 0.0, 0.8);
+    if (ks > 0.01) {
+        float L = dot(col, float3(0.3, 0.6, 0.1));
+        float tone = clamp(0.1 + 1.5 * L + 0.5 * exp(-sd * 2.4), 0.0, 1.0);
+        float2 g = fc / (uRes.y * 0.07);
+        float2 gp = float2(0.7071 * g.x - 0.7071 * g.y, 0.7071 * g.x + 0.7071 * g.y);
+        float rad = 0.74 * (1.0 - tone);
+        float dark = 1.0 - smoothstep(rad - 0.08, rad + 0.08, length(fract(gp) - 0.5));
+        float3 st = mix(float3(0.64, 0.47, 1.0), float3(0.012, 0.0, 0.05), dark);
+        st = mix(st, float3(0.97, 0.93, 1.0), smoothstep(0.8, 1.0, tone) * (1.0 - dark) * 0.8);
+        float wv = clamp(L * 1.7, 0.0, 1.0);
+        col = mix(col, mix(st, col * 1.1 + 0.03, wv * 0.9), ks);
+    }
+    float ex = fc.x / uRes.x;
+    float edge = smoothstep(0.0, 0.07, ex) * smoothstep(1.0, 0.93, ex);
+    col *= edge * uT.y;
+    float a = clamp(max(col.x, max(col.y, col.z)), 0.0, 1.0);
+    return half4(half3(col), half(a));
+}
+"""
+}

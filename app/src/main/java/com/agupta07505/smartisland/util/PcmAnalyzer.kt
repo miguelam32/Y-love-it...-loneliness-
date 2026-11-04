@@ -27,7 +27,8 @@ class PcmAnalyzer(private val rate: Int) {
         const val COL_MS = 6.0
         const val BANDS_OFF = COLS * 2
         const val AUX_OFF = BANDS_OFF + NB
-        const val BEAT_OFF = AUX_OFF + 5
+        const val IMP_OFF = AUX_OFF + 5
+        const val BEAT_OFF = IMP_OFF + 7
         const val OUT_SIZE = BEAT_OFF + COLS
     }
 
@@ -56,6 +57,12 @@ class PcmAnalyzer(private val rate: Int) {
     private val disp = FloatArray(NB)
     private val target = FloatArray(NB)
     private var level = 0f
+    private var pendingImp = 0f
+    private var sinceImp = 1000.0
+    private var impAge = 99f
+    private var impS = 0f
+    private var impU = 0.3f
+    private var impSeed = 1
 
     init {
         fun erb(f: Double) = 21.4 * log10(1 + 0.00437 * f)
@@ -129,10 +136,11 @@ class PcmAnalyzer(private val rate: Int) {
         fluxHist[fluxPos] = flux; fluxPos = (fluxPos + 1) % fluxHist.size
         var m = 0.0; for (f in fluxHist) m += f; m /= fluxHist.size
         var sd = 0.0; for (f in fluxHist) sd += (f - m) * (f - m); sd = sqrt(sd / fluxHist.size)
-        sinceBeat += COL_MS
+        sinceBeat += COL_MS; sinceImp += COL_MS
         if (flux > m + 1.5 * sd + 6.0 && sinceBeat > 170.0 && level > 0.12f) {
             beat = min(1.0, 0.55 + (flux - m) / 60.0)
             ringBeat[wcol] = beat.toFloat()
+            if (beat > 0.76 && sinceImp > 450.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
             sinceBeat = 0.0
         }
         beat *= exp(-COL_MS / 170.0)
@@ -158,5 +166,15 @@ class PcmAnalyzer(private val rate: Int) {
         var hs = 0f; for (i in 14 until NB) hs += disp[i]
         out[AUX_OFF] = bs / 5; out[AUX_OFF + 1] = ms / 9; out[AUX_OFF + 2] = hs / 10
         out[AUX_OFF + 3] = beat.toFloat(); out[AUX_OFF + 4] = level
+        if (pendingImp > 0f) {
+            impAge = 0f; impS = pendingImp; pendingImp = 0f
+            impSeed = impSeed % 97 + 1
+            impU = (impU + 0.381966f + 0.08f * ((impSeed * 37 % 100) / 100f)) % 1f
+        } else if (impAge < 90f) impAge += dt
+        val e1 = impS * exp(-impAge * 18f); val e2 = impS * exp(-impAge * 5.5f)
+        out[IMP_OFF] = e1; out[IMP_OFF + 1] = e2
+        out[IMP_OFF + 2] = 0.5f + (0.12f + 0.76f * impU - 0.5f) * 1.2f
+        out[IMP_OFF + 3] = 0.4f + 0.2f * ((impSeed * 0.618034f) % 1f)
+        out[IMP_OFF + 4] = impAge; out[IMP_OFF + 5] = impSeed.toFloat(); out[IMP_OFF + 6] = impS
     }
 }
