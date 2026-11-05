@@ -31,12 +31,14 @@ float3 ribbon(float x, float y) {
     float lo = 0.0;
     float hi = 0.0;
     float bm = 0.0;
+    float bw2 = 0.0;
     float cx = x * 39.0;
     for (int i = 0; i < 40; i++) {
         float w = max(0.0, 1.0 - abs(cx - float(i)));
         lo += uEnv[i].x * w;
         hi += uEnv[i].y * w;
         bm = max(bm, uBeat[i] * max(0.0, 1.0 - abs(cx - float(i)) * 0.8));
+        bw2 = max(bw2, uBeat[i] * max(0.0, 1.0 - abs(cx - float(i)) / 16.0));
     }
     float taper = pow(clamp(sin(3.14159 * clamp(x, 0.0, 1.0)), 0.0, 1.0), 0.6);
     float c = 0.5 * (lo + hi) * 0.55;
@@ -60,9 +62,10 @@ float3 ribbon(float x, float y) {
     float span = h + 0.25;
     float vb = smoothstep(span, span * 0.5, abs(y - c * taper));
     float mk = bm * bm * vb;
-    acc += float3(1.0, 0.92, 0.75) * mk * 0.9;
+    acc += float3(1.0, 0.92, 0.75) * mk * 1.4;
     float dm = (y - c * taper) / (px * 2.0);
-    acc += float3(1.0, 1.0, 1.0) * bm * exp(-dm * dm * 0.35) * 0.8;
+    acc += float3(1.0, 1.0, 1.0) * bm * exp(-dm * dm * 0.35) * 0.9;
+    acc += pal(x * 0.8 + 0.3) * bw2 * bw2 * (0.55 + 0.5 * exp(-y * y * 1.5));
     return acc;
 }
 
@@ -106,7 +109,7 @@ float3 scene(float2 uv, float off) {
     float glit = step(0.965, hs) * tw * near * (0.5 + beat * 2.2);
     col += pal(hs * 3.0 + x) * glit;
 
-    col += pal(x * 0.5 + uT.x * 0.05) * (beat * beat) * 0.22 * exp(-y * y * 1.5);
+    col += pal(x * 0.5 + uT.x * 0.05) * (beat * beat) * 0.5 * exp(-y * y * 0.8);
 
     return col;
 }

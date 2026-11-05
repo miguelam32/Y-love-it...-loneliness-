@@ -4,8 +4,8 @@ internal object DeepShaderB {
     const val SRC = """
 half4 main(float2 fc) {
     float2 u = float2(fc.x / uRes.x, 1.0 - fc.y / uRes.y);
-    float e1 = uImp.x;
-    float e2 = uImp.y;
+    float e1 = min(uImp.x * 1.1, 1.0);
+    float e2 = min(uImp.y * 1.2, 1.0);
     float2 ic = uImp.zw;
     float ia = uK.x;
     float gs = uK.y * 7.0 + floor(uT.x * 20.0);
@@ -19,13 +19,13 @@ half4 main(float2 fc) {
     if (e2 > 0.01) {
         float2 k1 = floor(u * float2(5.0, 11.0));
         float2 k2 = floor(u * float2(11.0, 29.0));
-        float b1 = step(1.0 - 0.5 * e2, hash(k1 + gs * 3.1));
-        float b2 = step(1.0 - 0.35 * e2, hash(k2 + gs * 7.7));
-        u.x += b1 * (hash(k1 + gs) - 0.5) * 0.5 * e2 + b2 * (hash(k2 + gs + 2.0) - 0.5) * 0.3 * e2;
-        u.y += b2 * (hash(k2 + gs + 4.0) - 0.5) * 0.08 * e2;
+        float b1 = step(1.0 - 0.6 * e2, hash(k1 + gs * 3.1));
+        float b2 = step(1.0 - 0.55 * e2, hash(k2 + gs * 7.7));
+        u.x += b1 * (hash(k1 + gs) - 0.5) * 0.8 * e2 + b2 * (hash(k2 + gs + 2.0) - 0.5) * 0.5 * e2;
+        u.y += b2 * (hash(k2 + gs + 4.0) - 0.5) * 0.16 * e2;
     }
-    float off = 0.003 + uAux.w * 0.010 + e2 * 0.04;
-    float bsr = e2 * 0.07;
+    float off = 0.003 + uAux.w * 0.010 + e2 * 0.07;
+    float bsr = e2 * 0.12;
     float3 col = float3(0.0);
     if (bsr > 0.004) {
         float2 rv = (ic - u) * bsr;
@@ -39,20 +39,24 @@ half4 main(float2 fc) {
     }
     float2 dc = (u - ic) * sa;
     float sd = length(dc);
-    col += float3(0.35, 0.12, 0.8) * e2 * exp(-sd * 2.2) * 0.8;
+    col += float3(0.35, 0.12, 0.8) * e2 * exp(-sd * 1.1) * 0.9;
+    col += float3(0.55, 0.3, 1.0) * e1 * 0.18;
+    float front = exp(-pow((abs(u.x - ic.x) * sa.x - ia * 3.2) / 0.14, 2.0)) * exp(-ia * 2.2) * uK.z;
+    col += float3(0.75, 0.55, 1.0) * front * 0.7 * step(0.001, e2);
+    col += float3(0.7, 0.5, 1.0) * ring * 0.8;
     if (e2 > 0.02) {
         float ca = hash(float2(gs, 9.0)) * 3.14159;
         float2 cd = float2(cos(ca), sin(ca));
         float al = dot(dc, cd);
         float pr = dot(dc, float2(-cd.y, cd.x));
         float c1 = exp(-pr * pr / 0.0006);
-        float c2 = exp(-abs(pr) * 18.0) * 0.4;
-        float ms = smoothstep(1.6, 0.8, abs(al));
-        col += (float3(1.0, 0.95, 1.0) * c1 + float3(0.62, 0.35, 1.0) * c2) * ms * e2 * 1.2;
-        col += float3(1.0, 0.9, 1.0) * exp(-sd * sd * 60.0) * 2.0 * e2;
+        float c2 = exp(-abs(pr) * 10.0) * 0.6;
+        float ms = smoothstep(3.2, 1.8, abs(al));
+        col += (float3(1.0, 0.95, 1.0) * c1 + float3(0.62, 0.35, 1.0) * c2) * ms * e2 * 1.6;
+        col += float3(1.0, 0.9, 1.0) * exp(-sd * sd * 40.0) * 2.6 * e2;
     }
     col = float3(1.0) - exp(-col * 1.35);
-    float ks = clamp(e1 * 0.8, 0.0, 0.8);
+    float ks = clamp(e1 * 0.75, 0.0, 0.7);
     if (ks > 0.01) {
         float L = dot(col, float3(0.3, 0.6, 0.1));
         float tone = clamp(0.1 + 1.5 * L + 0.5 * exp(-sd * 2.4), 0.0, 1.0);

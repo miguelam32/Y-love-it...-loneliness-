@@ -140,7 +140,7 @@ class PcmAnalyzer(private val rate: Int) {
         if (flux > m + 1.5 * sd + 6.0 && sinceBeat > 170.0 && level > 0.12f) {
             beat = min(1.0, 0.55 + (flux - m) / 60.0)
             ringBeat[wcol] = beat.toFloat()
-            if (beat > 0.76 && sinceImp > 450.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
+            if (beat > 0.70 && sinceImp > 380.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
             sinceBeat = 0.0
         }
         beat *= exp(-COL_MS / 170.0)
