@@ -41,7 +41,8 @@ half4 main(float2 fc) {
     float sd = length(dc);
     col += float3(0.35, 0.12, 0.8) * e2 * exp(-sd * 1.1) * 0.9;
     col += float3(0.55, 0.3, 1.0) * e1 * 0.18;
-    float front = exp(-pow((abs(u.x - ic.x) * sa.x - ia * 3.2) / 0.14, 2.0)) * exp(-ia * 2.2) * uK.z;
+    float fq = (abs(u.x - ic.x) * sa.x - ia * 3.2) / 0.14;
+    float front = exp(-fq * fq) * exp(-ia * 2.2) * uK.z;
     col += float3(0.75, 0.55, 1.0) * front * 0.7 * step(0.001, e2);
     col += float3(0.7, 0.5, 1.0) * ring * 0.8;
     if (e2 > 0.02) {

@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -144,3 +146,23 @@ private fun DrawScope.drawFallback(env: FloatArray, bands: FloatArray, beat: Flo
 }
 
 private fun sin(x: Float): Float = kotlin.math.sin(x)
+
+/** Album-disc angle: turns while [isPlaying], and keeps the exact angle it had when the music pauses. */
+@Composable
+fun rememberDiscRotation(isPlaying: Boolean, degreesPerSecond: Float = 48f): State<Float> {
+    val angle = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            var last = 0L
+            while (true) {
+                androidx.compose.runtime.withFrameNanos { n ->
+                    if (last != 0L) {
+                        angle.floatValue = (angle.floatValue + (n - last) / 1e9f * degreesPerSecond) % 360f
+                    }
+                    last = n
+                }
+            }
+        }
+    }
+    return angle
+}

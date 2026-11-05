@@ -139,6 +139,7 @@ fun IslandCollapsedContent(
                     }
                 }
                 IslandMode.Music -> {
+                    val discRot = rememberDiscRotation(notification?.mediaIsPlaying == true)
                     val artwork = notification?.let { com.agupta07505.smartisland.util.MediaArt.glyphBitmap(it) }
                     if (artwork != null) {
                         Image(
@@ -148,6 +149,7 @@ fun IslandCollapsedContent(
                             modifier = Modifier
                                 .size(22.dp)
                                 .clip(CircleShape)
+                                .graphicsLayer { rotationZ = discRot.value }
                         )
                     } else {
                         Box(
