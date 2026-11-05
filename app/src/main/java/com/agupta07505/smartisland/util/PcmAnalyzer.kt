@@ -117,19 +117,20 @@ class PcmAnalyzer(private val rate: Int) {
         pk = if (amp > pk) pk + (amp - pk) * 0.3 else pk * 0.99985
         cMin = 1f; cMax = -1f
 
-        var flux = 0.0; var energy = 0.0
+        var flux = 0.0; var energy = 0.0; var lowDb = 0.0; var midDb = 0.0
         var mx = -120.0
         for (i in 0 until NB) { val d0 = 20 * log10(env[i] + 1e-6) + i * 0.45; if (d0 > mx) mx = d0 }
         refDb = if (mx > refDb) mx else max(mx, refDb - 0.02)
-        refDb = max(refDb, -50.0)
+        refDb = max(refDb, -38.0)
         for (i in 0 until NB) {
             val db = 20 * log10(env[i] + 1e-6) + i * 0.45
             val v = ((db - refDb + 34.0) / 34.0).coerceIn(0.0, 1.0).pow(1.7)
             target[i] = v.toFloat()
-            if (i < 14) {
+            if (i < 3) {
                 val d = db - prevDb[i]
-                if (d > 0) flux += d * (if (i < 8) 1.0 else 0.6)
-            }
+                if (d > 0) flux += d
+                lowDb += db
+            } else if (i in 4..12) midDb += db
             prevDb[i] = db
             energy += v
         }
@@ -138,10 +139,11 @@ class PcmAnalyzer(private val rate: Int) {
         var m = 0.0; for (f in fluxHist) m += f; m /= fluxHist.size
         var sd = 0.0; for (f in fluxHist) sd += (f - m) * (f - m); sd = sqrt(sd / fluxHist.size)
         sinceBeat += COL_MS; sinceImp += COL_MS
-        if (flux > m + 1.5 * sd + 6.0 && sinceBeat > 170.0 && level > 0.12f) {
-            beat = min(1.0, 0.55 + (flux - m) / 60.0)
+        val lowDom = lowDb / 3.0 - midDb / 9.0
+        if (flux > m + 1.5 * sd + 4.0 && sinceBeat > 220.0 && lowDom > -8.0 && level > 0.15f) {
+            beat = min(1.0, 0.55 + (flux - m) / 40.0)
             ringBeat[wcol] = beat.toFloat()
-            if (beat > 0.70 && sinceImp > 380.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
+            if (beat > 0.800000 && sinceImp > 450.000000) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
             sinceBeat = 0.0
         }
         beat *= exp(-COL_MS / 170.0)
@@ -150,7 +152,7 @@ class PcmAnalyzer(private val rate: Int) {
     /** dt in seconds since last snapshot. out.size must be >= OUT_SIZE. */
     @Synchronized
     fun snapshot(out: FloatArray, dt: Float) {
-        val g = (0.9 / max(0.12, pk)).toFloat().coerceAtMost(6f)
+        val g = (0.9 / max(0.22, pk)).toFloat().coerceAtMost(4f)
         for (k in 0 until COLS) {
             val idx = (ringPos + k) % COLS
             out[k * 2] = (ringMin[idx] * g).coerceIn(-1f, 1f)

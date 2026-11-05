@@ -84,7 +84,7 @@ class HotspotPollMonitor(
             val all = NetworkInterface.getNetworkInterfaces()?.let { Collections.list(it) }.orEmpty()
             all.firstOrNull { ni ->
                 ni.isUp && !ni.isLoopback && (if (flag == null) AP_NAMES else AP_STRICT).matches(ni.name) &&
-                    Collections.list(ni.inetAddresses).any { it is Inet4Address }
+                    Collections.list(ni.inetAddresses).any { it is Inet4Address && (it.address[3].toInt() and 0xFF) == 1 }
             }?.name
         }.getOrNull()
         return iface?.let { "interface $it" }
