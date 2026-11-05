@@ -101,6 +101,13 @@ fun IslandCollapsedContent(
     val translationXRight = -translationProgress * maxTranslationPx
 
     Box(modifier = modifier.fillMaxSize()) {
+        if (mode == IslandMode.Music) {
+            NeonSpectrum(
+                isPlaying = notification?.mediaIsPlaying == true,
+                modifier = Modifier.fillMaxSize(),
+                fill = true
+            )
+        }
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -255,12 +262,7 @@ fun IslandCollapsedContent(
                         CallTimer(postTimeMillis = time, color = Color(settings.callColor))
                     }
                 }
-                IslandMode.Music -> {
-                    AudioVisualizer(
-                        isPlaying = notification?.mediaIsPlaying == true,
-                        color = Color(settings.musicVisualizerColor)
-                    )
-                }
+                IslandMode.Music -> Unit
                 IslandMode.Battery -> {
                     val pctText = notification?.text ?: "49%"
                     val textColor = batteryVisualColor(

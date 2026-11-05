@@ -10,6 +10,7 @@ uniform float uBand[24];
 uniform float uBeat[40];
 uniform float4 uImp;
 uniform float3 uK;
+uniform float uFrac;
 
 float3 pal(float t) {
     t = 1.0 - abs(fract(t * 0.5) * 2.0 - 1.0);
@@ -32,7 +33,7 @@ float3 ribbon(float x, float y) {
     float hi = 0.0;
     float bm = 0.0;
     float bw2 = 0.0;
-    float cx = x * 39.0;
+    float cx = x * 39.0 + uFrac;
     for (int i = 0; i < 40; i++) {
         float w = max(0.0, 1.0 - abs(cx - float(i)));
         lo += uEnv[i].x * w;

@@ -29,7 +29,8 @@ class PcmAnalyzer(private val rate: Int) {
         const val AUX_OFF = BANDS_OFF + NB
         const val IMP_OFF = AUX_OFF + 5
         const val BEAT_OFF = IMP_OFF + 7
-        const val OUT_SIZE = BEAT_OFF + COLS
+        const val FRAC_OFF = BEAT_OFF + COLS
+        const val OUT_SIZE = FRAC_OFF + 1
     }
 
     private val fc = DoubleArray(NB)
@@ -156,6 +157,7 @@ class PcmAnalyzer(private val rate: Int) {
             out[k * 2 + 1] = (ringMax[idx] * g).coerceIn(-1f, 1f)
             out[BEAT_OFF + k] = ringBeat[idx]
         }
+        out[FRAC_OFF] = colCount.toFloat() / colLen
         val ka = 1 - exp(-dt / 0.025f); val kr = 1 - exp(-dt / 0.14f)
         for (i in 0 until NB) {
             disp[i] += (target[i] - disp[i]) * (if (target[i] > disp[i]) ka else kr)

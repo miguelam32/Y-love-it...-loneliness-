@@ -33,7 +33,8 @@ fun NeonSpectrum(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     width: Dp = 56.dp,
-    height: Dp = 32.dp
+    height: Dp = 32.dp,
+    fill: Boolean = false
 ) {
     DisposableEffect(Unit) {
         SystemAudioCapture.start()
@@ -64,7 +65,7 @@ fun NeonSpectrum(
         }
     }
 
-    Canvas(modifier.size(width, height)) {
+    Canvas(if (fill) modifier else modifier.size(width, height)) {
         val n = tick
         System.arraycopy(data, 0, env, 0, env.size)
         System.arraycopy(data, PcmAnalyzer.BANDS_OFF, bands, 0, bands.size)
@@ -102,6 +103,7 @@ private fun DrawScope.drawShader(
     rs.setFloatUniform("uEnv", env)
     rs.setFloatUniform("uBand", bands)
     rs.setFloatUniform("uBeat", beats)
+    rs.setFloatUniform("uFrac", data[PcmAnalyzer.FRAC_OFF])
     val io = PcmAnalyzer.IMP_OFF
     rs.setFloatUniform("uImp", data[io], data[io + 1], data[io + 2], data[io + 3])
     rs.setFloatUniform("uK", data[io + 4], data[io + 5], data[io + 6])

@@ -29,11 +29,11 @@ half4 main(float2 fc) {
     float3 col = float3(0.0);
     if (bsr > 0.004) {
         float2 rv = (ic - u) * bsr;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 4; i++) {
             float2 q = u + rv * float(i);
             col += scene(float2(q.x, 1.0 - q.y), off);
         }
-        col = col / 5.0;
+        col = col / 4.0;
     } else {
         col = scene(float2(u.x, 1.0 - u.y), off);
     }
@@ -69,8 +69,11 @@ half4 main(float2 fc) {
         float wv = clamp(L * 1.7, 0.0, 1.0);
         col = mix(col, mix(st, col * 1.1 + 0.03, wv * 0.9), ks);
     }
-    float ex = fc.x / uRes.x;
-    float edge = smoothstep(0.0, 0.07, ex) * smoothstep(1.0, 0.93, ex);
+    float2 pc = fc - uRes * 0.5;
+    float prad = uRes.y * 0.5;
+    float2 qd = abs(pc) - (uRes * 0.5 - float2(prad));
+    float dd = length(max(qd, float2(0.0))) + min(max(qd.x, qd.y), 0.0) - prad;
+    float edge = smoothstep(0.0, -5.0, dd);
     col *= edge * uT.y;
     float a = clamp(max(col.x, max(col.y, col.z)), 0.0, 1.0);
     return half4(half3(col), half(a));

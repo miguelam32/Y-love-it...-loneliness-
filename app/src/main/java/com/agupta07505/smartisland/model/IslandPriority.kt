@@ -27,11 +27,21 @@ object IslandPriority {
         IslandMode.Empty -> 50
     }
 
+    private const val MUSIC_GRACE_MS = 10_000L
+    @Volatile private var lastPlayingMs = 0L
+
+    /** Playing, or paused for less than a few seconds (track changes): still counts as playing so the hotspot never steals the notch. */
+    private fun musicPlaying(n: IslandNotification): Boolean {
+        val now = System.currentTimeMillis()
+        if (n.mediaIsPlaying) { lastPlayingMs = now; return true }
+        return now - lastPlayingMs < MUSIC_GRACE_MS
+    }
+
     fun rank(n: IslandNotification): Int =
         when {
             // Solo para ordenar: el hotspot queda detras de una cancion sonando y delante de una pausada.
             n.mode == IslandMode.Hotspot -> 31
-            n.mode == IslandMode.Music && !n.mediaIsPlaying -> rank(n.mode) + 2
+            n.mode == IslandMode.Music && !musicPlaying(n) -> rank(n.mode) + 2
             else -> rank(n.mode)
         }
 
