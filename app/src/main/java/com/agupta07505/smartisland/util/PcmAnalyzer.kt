@@ -22,6 +22,9 @@ import kotlin.math.sqrt
  */
 class PcmAnalyzer(private val rate: Int) {
     companion object {
+        /** Beat sensitivity: higher SUB_DOM = only deep kicks count (voice/plosives ignored). Higher IMPACT_MIN = fewer purple explosions. */
+        const val SUB_DOM = 4.0
+        const val IMPACT_MIN = 0.8
         const val NB = 24
         const val COLS = 40
         const val COL_MS = 6.0
@@ -117,7 +120,7 @@ class PcmAnalyzer(private val rate: Int) {
         pk = if (amp > pk) pk + (amp - pk) * 0.3 else pk * 0.99985
         cMin = 1f; cMax = -1f
 
-        var flux = 0.0; var energy = 0.0; var lowDb = 0.0; var midDb = 0.0
+        var flux = 0.0; var energy = 0.0; var lowDb = 0.0; var midDb = 0.0; var db0 = 0.0; var db3 = 0.0
         var mx = -120.0
         for (i in 0 until NB) { val d0 = 20 * log10(env[i] + 1e-6) + i * 0.45; if (d0 > mx) mx = d0 }
         refDb = if (mx > refDb) mx else max(mx, refDb - 0.02)
@@ -130,7 +133,8 @@ class PcmAnalyzer(private val rate: Int) {
                 val d = db - prevDb[i]
                 if (d > 0) flux += d
                 lowDb += db
-            } else if (i in 4..12) midDb += db
+                if (i == 0) db0 = db
+            } else if (i == 3) { db3 = db; midDb += 0.0 } else if (i in 4..12) midDb += db
             prevDb[i] = db
             energy += v
         }
@@ -140,10 +144,10 @@ class PcmAnalyzer(private val rate: Int) {
         var sd = 0.0; for (f in fluxHist) sd += (f - m) * (f - m); sd = sqrt(sd / fluxHist.size)
         sinceBeat += COL_MS; sinceImp += COL_MS
         val lowDom = lowDb / 3.0 - midDb / 9.0
-        if (flux > m + 1.5 * sd + 4.0 && sinceBeat > 220.0 && lowDom > -8.0 && level > 0.15f) {
+        if (flux > m + 1.5 * sd + 4.0 && sinceBeat > 220.0 && lowDom > -8.0 && db0 - db3 > SUB_DOM && level > 0.15f) {
             beat = min(1.0, 0.55 + (flux - m) / 40.0)
             ringBeat[wcol] = beat.toFloat()
-            if (beat > 0.800000 && sinceImp > 450.000000) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
+            if (beat > IMPACT_MIN && sinceImp > 450.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
             sinceBeat = 0.0
         }
         beat *= exp(-COL_MS / 170.0)
