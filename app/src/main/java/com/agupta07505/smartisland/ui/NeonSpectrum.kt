@@ -47,6 +47,7 @@ fun NeonSpectrum(
     val env = remember { FloatArray(PcmAnalyzer.COLS * 2) }
     val bands = remember { FloatArray(PcmAnalyzer.NB) }
     val beats = remember { FloatArray(PcmAnalyzer.COLS) }
+    val quality = remember { FloatArray(1) { 1f } }
     var tick by remember { mutableLongStateOf(0L) }
     var t0 by remember { mutableLongStateOf(0L) }
     val shader = remember {
@@ -56,11 +57,25 @@ fun NeonSpectrum(
 
     LaunchedEffect(Unit) {
         var last = 0L
+        var avg = 0.0167f
+        var slow = 0f
+        var fast = 0f
+        var downs = 0
         while (true) {
             androidx.compose.runtime.withFrameNanos { n ->
                 val dt = if (last == 0L) 0.016f else ((n - last) / 1e9f).coerceIn(0.001f, 0.1f)
                 last = n
                 if (t0 == 0L) t0 = n
+                // adaptive detail: drop quality if the GPU cannot hold ~45 fps, restore slowly when it can
+                avg += (dt - avg) * 0.05f
+                if (avg > 0.024f) { slow += dt; fast = 0f } else if (avg < 0.0185f) { fast += dt; slow = 0f } else { slow = 0f; fast = 0f }
+                if (slow > 1.2f && quality[0] > 0.35f) {
+                    quality[0] = if (quality[0] > 0.6f) 0.5f else 0.3f
+                    downs++; slow = 0f; avg = 0.0167f
+                } else if (fast > 8f && quality[0] < 1f && downs < 2) {
+                    quality[0] = if (quality[0] < 0.4f) 0.5f else 1f
+                    fast = 0f
+                }
                 SystemAudioCapture.snapshot(data, dt)
                 tick = n
             }
@@ -76,7 +91,7 @@ fun NeonSpectrum(
         var done = false
         if (shader != null && !failed.value && Build.VERSION.SDK_INT >= 33) {
             try {
-                drawShader(shader, data, env, bands, beats, time, live)
+                drawShader(shader, data, env, bands, beats, time, live, quality[0])
                 done = true
             } catch (_: Throwable) {
                 failed.value = true
@@ -89,11 +104,11 @@ fun NeonSpectrum(
 private class BoolBox(var value: Boolean)
 
 @RequiresApi(33)
-private fun makeShader(): RuntimeShader = RuntimeShader(DeepShaderA.SRC + DeepShaderB.SRC)
+private fun makeShader(): RuntimeShader = RuntimeShader(DeepShaderA.SRC + DeepShaderB.SRC + DeepShaderC.SRC + DeepShaderD.SRC)
 
 @RequiresApi(33)
 private fun DrawScope.drawShader(
-    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, beats: FloatArray, time: Float, live: Float
+    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, beats: FloatArray, time: Float, live: Float, quality: Float
 ) {
     rs.setFloatUniform("uRes", size.width, size.height)
     rs.setFloatUniform("uT", time, live)
@@ -106,6 +121,7 @@ private fun DrawScope.drawShader(
     rs.setFloatUniform("uBand", bands)
     rs.setFloatUniform("uBeat", beats)
     rs.setFloatUniform("uFrac", data[PcmAnalyzer.FRAC_OFF])
+    rs.setFloatUniform("uQ", quality)
     val io = PcmAnalyzer.IMP_OFF
     rs.setFloatUniform("uImp", data[io], data[io + 1], data[io + 2], data[io + 3])
     rs.setFloatUniform("uK", data[io + 4], data[io + 5], data[io + 6])

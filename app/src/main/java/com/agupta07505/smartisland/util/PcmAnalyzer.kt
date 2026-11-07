@@ -4,6 +4,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
@@ -22,9 +23,19 @@ import kotlin.math.sqrt
  */
 class PcmAnalyzer(private val rate: Int) {
     companion object {
-        /** Beat sensitivity: higher SUB_DOM = only deep kicks count (voice/plosives ignored). Higher IMPACT_MIN = fewer purple explosions. */
-        const val SUB_DOM = 4.0
+        /**
+         * Beat tuning (kick = onset in the 55-170 Hz bands).
+         *  BEAT_SD / BEAT_ADD : adaptive threshold (mean + SD*sd + ADD). Raise = fewer beats.
+         *  BEAT_REL           : an onset must be at least this fraction of the recent flux peak (5 s memory). Raise = only strong kicks.
+         *  IMPACT_MIN         : strength needed for the purple whole-pill explosion. Raise = fewer explosions.
+         */
+        const val BEAT_SD = 1.5
+        const val BEAT_ADD = 3.0
+        const val BEAT_REL = 0.35
         const val IMPACT_MIN = 0.8
+        const val IMPACT_GAP_MS = 900.0
+        private val FLUX_W = doubleArrayOf(1.5, 1.0, 0.6)
+        private val FLUX_PK_DECAY = exp(-6.0 / 1000.0 * ln(2.0) / 5.0)
         const val NB = 24
         const val COLS = 40
         const val COL_MS = 6.0
@@ -57,6 +68,8 @@ class PcmAnalyzer(private val rate: Int) {
     private val fluxHist = DoubleArray(160)
     private var fluxPos = 0
     private var sinceBeat = 1000.0
+    private var fluxPk = 0.0
+    private var warm = 0
     private var beat = 0.0
     private val disp = FloatArray(NB)
     private val target = FloatArray(NB)
@@ -120,7 +133,7 @@ class PcmAnalyzer(private val rate: Int) {
         pk = if (amp > pk) pk + (amp - pk) * 0.3 else pk * 0.99985
         cMin = 1f; cMax = -1f
 
-        var flux = 0.0; var energy = 0.0; var lowDb = 0.0; var midDb = 0.0; var db0 = 0.0; var db3 = 0.0
+        var flux = 0.0; var energy = 0.0
         var mx = -120.0
         for (i in 0 until NB) { val d0 = 20 * log10(env[i] + 1e-6) + i * 0.45; if (d0 > mx) mx = d0 }
         refDb = if (mx > refDb) mx else max(mx, refDb - 0.02)
@@ -131,10 +144,8 @@ class PcmAnalyzer(private val rate: Int) {
             target[i] = v.toFloat()
             if (i < 3) {
                 val d = db - prevDb[i]
-                if (d > 0) flux += d
-                lowDb += db
-                if (i == 0) db0 = db
-            } else if (i == 3) { db3 = db; midDb += 0.0 } else if (i in 4..12) midDb += db
+                if (d > 0) flux += d * FLUX_W[i]
+            }
             prevDb[i] = db
             energy += v
         }
@@ -143,12 +154,17 @@ class PcmAnalyzer(private val rate: Int) {
         var m = 0.0; for (f in fluxHist) m += f; m /= fluxHist.size
         var sd = 0.0; for (f in fluxHist) sd += (f - m) * (f - m); sd = sqrt(sd / fluxHist.size)
         sinceBeat += COL_MS; sinceImp += COL_MS
-        val lowDom = lowDb / 3.0 - midDb / 9.0
-        if (flux > m + 1.5 * sd + 4.0 && sinceBeat > 220.0 && lowDom > -8.0 && db0 - db3 > SUB_DOM && level > 0.15f) {
-            beat = min(1.0, 0.55 + (flux - m) / 40.0)
-            ringBeat[wcol] = beat.toFloat()
-            if (beat > IMPACT_MIN && sinceImp > 450.0) { pendingImp = beat.toFloat(); sinceImp = 0.0 }
-            sinceBeat = 0.0
+        fluxPk *= FLUX_PK_DECAY
+        if (warm < fluxHist.size) warm++
+        if (warm >= fluxHist.size && flux > m + BEAT_SD * sd + BEAT_ADD && sinceBeat > 220.0 && level > 0.15f) {
+            if (flux > fluxPk) fluxPk = flux
+            if (flux >= BEAT_REL * fluxPk) {
+                val strength = ((flux / fluxPk - 0.2) / 0.8).coerceIn(0.0, 1.0)
+                beat = max(0.35, strength)
+                ringBeat[wcol] = beat.toFloat()
+                if (strength > IMPACT_MIN && sinceImp > IMPACT_GAP_MS) { pendingImp = strength.toFloat(); sinceImp = 0.0 }
+                sinceBeat = 0.0
+            }
         }
         beat *= exp(-COL_MS / 170.0)
     }
