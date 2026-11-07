@@ -19,8 +19,8 @@ float3 aurora(float x, float y, float4 e, float bv, float pxy) {
     float inten = 0.0;
     float white = 0.0;
     float inb = step(abs(y - ya), sg * 1.5 + 8.0 * pxy);
-    for (int dxi = -1; dxi <= 1; dxi++) {
-        float ci = c0 + float(dxi);
+    for (int dxi = 0; dxi < 3; dxi++) {
+        float ci = c0 + float(dxi) - 1.0;
         for (int j = 0; j < 7; j++) {
           if (inb > 0.5 && float(j) < 7.0 * uQ + 0.01) {
             float2 id = float2(ci, float(j) + 31.0);
