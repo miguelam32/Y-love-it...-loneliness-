@@ -97,7 +97,7 @@ object SystemAudioCapture {
                 s.soTimeout = 500
                 socket = s
                 udpAlive = true
-                val buf = ByteArray(16384)
+                val buf = ByteArray(65536)
                 val pkt = DatagramPacket(buf, buf.size)
                 while (!s.isClosed) {
                     try {

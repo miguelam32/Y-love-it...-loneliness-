@@ -8,10 +8,12 @@ float3 tide(float x, float y, float4 e, float bv, float pxy) {
     float bass = uAux.x;
     float mid = uAux.y;
     float hi = uAux.z;
-    float swell = 0.12 * sin(x * 33.0 + t * 0.85 + 1.3) * (0.5 + 0.9 * bass)
-        + 0.075 * sin(x * 55.0 - t * 1.2) * (0.4 + mid)
-        + 0.04 * sin(x * 89.0 + t * 1.7) * (0.3 + 2.0 * hi);
-    float yT = -0.08 + swell + e.x * 0.08 + (bv - 0.35) * 0.16;
+    float bt = uAux.w;
+    float swell = 0.12 * sin(x * 33.0 + t * 2.7 + 1.3) * (0.45 + 1.2 * bass)
+        + 0.075 * sin(x * 55.0 - t * 3.6) * (0.4 + 1.3 * mid)
+        + 0.045 * sin(x * 89.0 + t * 5.1) * (0.3 + 2.4 * hi)
+        + 0.05 * bt * sin(x * 21.0 + t * 8.0);
+    float yT = -0.08 + swell + e.x * 0.10 + (bv - 0.30) * 0.30;
     float hw = 0.06 + 0.15 * clamp(e.y * 1.4, 0.0, 1.0) + 0.04 * bv;
     float cw = uRes.y * 0.028;
     float ci = floor(x * uRes.x / cw);
@@ -50,12 +52,16 @@ float3 tide(float x, float y, float4 e, float bv, float pxy) {
     float hs2 = hash(float2(idx, 11.0));
     float bvn = bandAt((idx + 0.5) / nn);
     float act = step(0.38, hs);
-    float len = (0.04 + bvn) * (0.25 + 0.75 * hs2) * 1.0 * act * (0.50 + 0.9 * bass);
-    float dxp = (fract(x * nn) - 0.5) * uRes.x / nn;
-    float thin = exp(-dxp * dxp * 2.4);
+    float fl = 0.62 + 0.38 * sin(t * (3.0 + 5.0 * hs) + hs2 * 40.0);
+    float len = ((0.04 + 1.25 * bvn) * (0.25 + 0.75 * hs2) * fl * (0.45 + 1.0 * bass) + bt * (0.10 + 0.34 * hs2)) * act;
     float top = yT + hw;
-    float up = step(top, y) * step(y, top + len) * (1.0 - (y - top) / max(len, 0.03));
     float bot = yT - hw;
+    float lean = 0.95 * sin(t * (0.8 + 1.6 * hs) + hs2 * 20.0) * (0.3 + bass + bt);
+    float hy = mix(min(y - bot, 0.0), max(y - top, 0.0), step(yT, y));
+    float cx = clamp(0.28 * sin(t * (1.1 + 2.4 * hs2) + hs * 50.0) + lean * hy, -0.42, 0.42);
+    float dxp = (fract(x * nn) - 0.5 - cx) * uRes.x / nn;
+    float thin = exp(-dxp * dxp * 2.4);
+    float up = step(top, y) * step(y, top + len) * (1.0 - (y - top) / max(len, 0.03));
     float dlen = len * 1.6;
     float dn = step(y, bot) * step(bot - dlen, y) * (1.0 - (bot - y) / max(dlen, 0.03)) * 0.40;
     float dots = 0.55 + 0.45 * step(0.5, fract(y * uRes.y * 0.30 + hs * 7.0));

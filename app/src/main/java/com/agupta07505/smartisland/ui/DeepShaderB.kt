@@ -8,9 +8,9 @@ float3 aurora(float x, float y, float4 e, float bv, float pxy) {
     float bass = uAux.x;
     float mid = uAux.y;
     float hi = uAux.z;
-    float ya = 0.56 + 0.15 * sin(x * 13.0 + t * 0.34 + 0.6) * (0.55 + 0.9 * bass)
-        + 0.09 * sin(x * 27.0 - t * 0.55 + 1.9) * (0.40 + 1.0 * mid)
-        + 0.045 * sin(x * 46.0 + t * 0.9) * (0.30 + 2.0 * hi) + e.x * 0.12;
+    float ya = 0.56 + 0.15 * sin(x * 13.0 + t * 0.8 + 0.6) * (0.55 + 0.9 * bass)
+        + 0.09 * sin(x * 27.0 - t * 1.3 + 1.9) * (0.40 + 1.0 * mid)
+        + 0.045 * sin(x * 46.0 + t * 2.0) * (0.30 + 2.0 * hi) + e.x * 0.12;
     float sg = 0.11 + 0.20 * clamp(e.y * 1.6, 0.0, 1.0) + 0.10 * bv;
     float cw = uRes.y * 0.040;
     float n = uRes.x / cw;
@@ -78,9 +78,9 @@ float3 scopeLines(float x, float y, float pxy, float act) {
 float terrH(float x, float z) {
     float t = uT.x;
     float zf = z + t * 0.05;
-    float sw = sin(x * 19.0 + zf * 7.0 + t * 0.30) * 0.9
-        + 0.6 * sin(x * 33.0 - zf * 11.0 - t * 0.42)
-        + 0.35 * sin(x * 54.0 + zf * 17.0);
+    float sw = sin(x * 19.0 + zf * 7.0 + t * 0.9) * 0.9
+        + 0.6 * sin(x * 33.0 - zf * 11.0 - t * 1.2)
+        + 0.35 * sin(x * 54.0 + zf * 17.0 + t * 1.7);
     return sw * (0.45 + 0.9 * uAux.y + 0.5 * uAux.x);
 }
 
