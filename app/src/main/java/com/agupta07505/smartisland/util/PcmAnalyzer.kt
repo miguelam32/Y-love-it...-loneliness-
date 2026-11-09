@@ -46,8 +46,8 @@ class PcmAnalyzer(private val rate: Int) {
         const val OUT_SIZE = SCOPE_B_OFF + SCOPE_B
         /** Scope tuning: window shown (ms) and smoothing time constants (s). Bigger tau = slower, calmer line. */
         const val SCOPE_MS = 46.0
-        const val SCOPE_TAU_A = 0.06f
-        const val SCOPE_TAU_B = 0.22f
+        const val SCOPE_TAU_A = 0.045f
+        const val SCOPE_TAU_B = 0.17f
         const val SCOPE_FC = 320.0
         private const val RMASK = 8191
         private const val TMP_N = 5200

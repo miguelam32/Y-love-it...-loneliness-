@@ -97,3 +97,121 @@ internal object DeepCanvasFx {
     }
     }
 }
+
+private fun hash(a: Float, b: Float): Float = DeepCanvas.hash(a, b)
+
+private fun vnz(x: Float, y: Float): Float {
+    val ix = floor(x); val iy = floor(y)
+    var fx = x - ix; var fy = y - iy
+    fx = fx * fx * (3f - 2f * fx); fy = fy * fy * (3f - 2f * fy)
+    val a = DeepCanvas.hash(ix, iy); val b = DeepCanvas.hash(ix + 1f, iy)
+    val c = DeepCanvas.hash(ix, iy + 1f); val d = DeepCanvas.hash(ix + 1f, iy + 1f)
+    return (a + (b - a) * fx) * (1f - fy) + (c + (d - c) * fx) * fy
+}
+
+private const val HT_BUCKETS = 5
+private val htBuf = Array(HT_BUCKETS) { FloatArray(2400) }
+private val htCnt = IntArray(HT_BUCKETS)
+private val spk = FloatArray(4 * 12)
+
+/**
+ * The .html's hard-hit look, drawn UNDER the additive scene: lavender wash, dark halftone dots (bigger where the scene is dark),
+ * ink blobs, white spokes and torn shards. Lingers about one second after a strong hit (e3 decays slowly).
+ */
+internal fun DeepCanvas.halftoneLayer(sink: DcSink, data: FloatArray, t: Float, bass: Float, mid: Float, hi: Float): Float {
+    val io = PcmAnalyzer.IMP_OFF
+    val age = data[io + 4]
+    val strength = data[io + 6]
+    if (strength < 0.02f || age > 2.8f) return 0f
+    val seed = data[io + 5]
+    val e1 = min(strength * exp(-age * 14f), 1f)
+    val e2 = min(data[io + 1] * 1.2f, 1f)
+    val e3 = strength * exp(-age * 2.2f)
+    val k3 = DeepCanvas.smooth(0.15f, 0.7f, e3)
+    val ks = min(max(k3, e1 * 0.8f), 0.94f)
+    if (ks < 0.02f) return 0f
+    val w = wp; val h = hp
+    val cxp = data[io + 2] * w
+    val cyp = (1f - data[io + 3]) * h
+    sink.overRect(0f, 0f, w, h, 0.64f, 0.47f, 1f, ks * 0.92f)
+
+    val s = h * 0.06f
+    val p = s * 1.4142f
+    val nx = (w / p).toInt() + 2
+    val ny = (h / (p * 0.5f)).toInt() + 2
+    val lvl = (0.6f + 0.8f * bass + 0.4f * mid).coerceIn(0f, 1.3f)
+    for (j in 0 until ny) {
+        val y = j * p * 0.5f
+        val off = if (j and 1 == 1) p * 0.5f else 0f
+        for (i in 0 until nx) {
+            val x = i * p + off
+            val dx = (x - cxp) / h
+            val dy = (y - cyp) / h
+            val sd = kotlin.math.sqrt(dx * dx + dy * dy)
+            val an = kotlin.math.atan2(-dy, dx)
+            val xn = (x / w).coerceIn(0f, 1f)
+            val yn = 1f - 2f * y / h
+            val e = at(ex, xn); val ee = at(ey, xn); val bv = at(bnd, xn)
+            val yT = tideY(xn, t, bass, mid, hi, e, bv)
+            val hw = tideHw(ee, bv, 0f)
+            val dd = (yn - yT) / (hw + 0.10f)
+            val lest = 0.10f + 0.62f * exp(-dd * dd) * lvl + 0.10f * bv
+            val rays = vnz(an * 9f + 3f, seed * 0.37f)
+            val tone = (0.24f + 1.1f * lest + 0.5f * exp(-sd * 2.4f) * (0.5f + 0.5f * e3) + 0.4f * (rays - 0.5f)).coerceIn(0f, 1f)
+            var rad = 0.74f * (1f - tone)
+            val br = vnz(an * 11f + seed * 2f, sd * 2.6f) * DeepCanvas.smooth(0.12f, 0.55f, sd)
+            if (DeepCanvas.smooth(0.55f, 0.62f, br) * k3 > 0.5f) rad = 0.80f
+            if (rad < 0.07f) continue
+            val b = ((rad / 0.80f) * HT_BUCKETS - 0.001f).toInt().coerceIn(0, HT_BUCKETS - 1)
+            var n = htCnt[b]
+            if (n + 2 > htBuf[b].size) {
+                sink.overDots(htBuf[b], n / 2, 2f * s * 0.80f * (b + 1) / HT_BUCKETS, 0.012f, 0f, 0.05f, ks)
+                n = 0
+            }
+            htBuf[b][n] = x; htBuf[b][n + 1] = y
+            htCnt[b] = n + 2
+        }
+    }
+    for (b in 0 until HT_BUCKETS) {
+        if (htCnt[b] > 0) sink.overDots(htBuf[b], htCnt[b] / 2, 2f * s * 0.80f * (b + 1) / HT_BUCKETS, 0.012f, 0f, 0.05f, ks)
+        htCnt[b] = 0
+    }
+
+    // torn shards (ink / pale lavender strips, displaced)
+    if (e2 > 0.05f) {
+        val gs = seed * 7f + floor(t * 24f)
+        for (r in 0 until 29) for (c in 0 until 11) {
+            val hb = hash(r * 11f + c, gs * 7.7f)
+            if (hb > 1f - 0.35f * e2) {
+                val sh = (hash(r * 11f + c, gs + 2f) - 0.5f) * 0.3f * e2
+                val x0 = (c / 11f + sh) * w
+                val y0 = r / 29f * h
+                if (hash(c.toFloat(), gs + r) > 0.45f) sink.overRect(x0, y0, x0 + w / 11f, y0 + h / 29f, 0.012f, 0f, 0.05f, 0.75f * e2)
+                else sink.overRect(x0, y0, x0 + w / 11f, y0 + h / 29f, 0.92f, 0.85f, 1f, 0.60f * e2)
+            }
+        }
+    }
+
+    // white spokes from the impact centre (wedges: wider with distance)
+    for (id in 0 until 64) {
+        val r1 = hash(id.toFloat(), seed + 1f)
+        if (r1 < 0.42f) continue
+        val r2 = hash(id.toFloat(), seed + 2f)
+        val ang = (id + 0.5f - seed) * 6.2832f / 64f
+        val ca = cos(-ang); val sa = sin(-ang)
+        val r0 = 0.17f
+        val r3 = 0.25f + 0.8f * r1 + 0.15f
+        val hwid = 0.04f + 0.18f * r2
+        for (q in 0 until 3) {
+            val ra = r0 + (r3 - r0) * q / 3f
+            val rb = r0 + (r3 - r0) * (q + 1) / 3f
+            val rm = 0.5f * (ra + rb)
+            val fade = 1f - (q / 3f) * 0.5f
+            val o = q * 4
+            spk[o] = cxp + ca * ra * h; spk[o + 1] = cyp + sa * ra * h
+            spk[o + 2] = cxp + ca * rb * h; spk[o + 3] = cyp + sa * rb * h
+            sink.overLines(spk, 1, max(1.0f, 2f * hwid * 0.098f * rm * h), 0.98f, 0.95f, 1f, k3 * fade * 0.75f)
+        }
+    }
+    return ks
+}

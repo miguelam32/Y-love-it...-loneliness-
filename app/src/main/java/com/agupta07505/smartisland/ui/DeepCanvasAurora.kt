@@ -58,9 +58,9 @@ internal fun DeepCanvas.auroraLayer(sink: DcSink, t: Float, bass: Float, mid: Fl
 
 /** Back lines: the real PCM waveform (zero-cross triggered, slowly smoothed) as glowing neon lines. */
 internal fun DeepCanvas.scopeLayer(sink: DcSink, data: FloatArray, level: Float, gain: Float) {
-    val act = (0.40f + 0.60f * (level * 1.6f).coerceIn(0f, 1f)) * gain
-    val yc = 0.30f
-    val amp = 0.66f
+    val act = (0.40f + 0.60f * (level * 1.6f).coerceIn(0f, 1f)) * gain * 0.62f
+    val yc = 0.34f
+    val amp = 0.50f
     val nb = PcmAnalyzer.SCOPE_B
     for (q in 0 until nb) {
         val xn = q / (nb - 1f)
@@ -89,8 +89,8 @@ private fun DeepCanvas.segs(n: Int, sink: DcSink, act: Float, echo: Boolean) {
         sink.lines(ln, n - 1, 5.0f, 0.55f, 0.40f, 1f, 0.10f * act)
         sink.lines(ln, n - 1, 1.6f, 0.62f, 0.45f, 1f, 0.50f * act)
     } else {
-        sink.lines(ln, n - 1, 7.0f, 0.30f, 0.80f, 1f, 0.12f * act)
-        sink.lines(ln, n - 1, 3.0f, 0.30f, 0.92f, 1f, 0.34f * act)
-        sink.lines(ln, n - 1, 1.3f, 0.88f, 0.97f, 1f, min(1f, 0.95f * act))
+        sink.lines(ln, n - 1, 6.0f, 0.30f, 0.80f, 1f, 0.10f * act)
+        sink.lines(ln, n - 1, 2.6f, 0.30f, 0.92f, 1f, 0.30f * act)
+        sink.lines(ln, n - 1, 1.2f, 0.80f, 0.95f, 1f, min(1f, 0.90f * act))
     }
 }

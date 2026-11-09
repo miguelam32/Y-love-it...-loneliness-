@@ -102,26 +102,64 @@ internal fun DeepCanvas.tideLayer(sink: DcSink, t: Float, bass: Float, mid: Floa
             sink.glow(px(xn), py(yT + hw - 0.30f), w / 12f * 1.6f, 0.42f * h * 0.5f,
                 0.17f, 0.22f, 0.62f, min(1f, 0.30f + 0.3f * lvl) * gain)
         }
-        // needles
+        // needles (sway, flicker, jump on every kick)
         val nn = 64
+        val cwn = w / nn
         for (i in 0 until nn) {
             val hs = hash(i.toFloat(), 3f)
             if (hs <= 0.52f) continue
             val hs2 = hash(i.toFloat(), 11f)
             val xn = (i + 0.5f) / nn
             val bvn = at(bnd, xn)
-            val len = (0.03f + bvn) * (0.25f + 0.75f * hs2) * (0.40f + 0.8f * bass)
+            val fl = 0.62f + 0.38f * sin(t * (3f + 5f * hs) + hs2 * 40f)
+            val len = (0.03f + 1.25f * bvn) * (0.25f + 0.75f * hs2) * fl * (0.45f + bass) + beat * (0.10f + 0.34f * hs2)
             val e = at(ex, xn); val ee = at(ey, xn)
             val yT = tideY(xn, t, bass, mid, hi, e, bvn)
             val hw = tideHw(ee, bvn, beat)
             val top = yT + hw
             val bot = yT - hw
+            val lean = 0.95f * sin(t * (0.8f + 1.6f * hs) + hs2 * 20f) * (0.3f + bass + beat)
+            val sw = 0.28f * sin(t * (1.1f + 2.4f * hs2) + hs * 50f)
             val x = px(xn)
-            ln[0] = x; ln[1] = py(top); ln[2] = x; ln[3] = py(top + len * 0.5f)
-            sink.lines(ln, 1, 1.0f, 0.74f, 0.90f, 1f, 0.55f * gain)
-            ln[0] = x; ln[1] = py(top + len * 0.5f); ln[2] = x; ln[3] = py(top + len)
-            sink.lines(ln, 1, 1.0f, 0.74f, 0.90f, 1f, 0.22f * gain)
+            val xm = x + (sw + lean * len * 0.5f).coerceIn(-0.42f, 0.42f) * cwn
+            val xt = x + (sw + lean * len).coerceIn(-0.42f, 0.42f) * cwn
+            ln[0] = x + sw * cwn; ln[1] = py(top); ln[2] = xm; ln[3] = py(top + len * 0.5f)
+            sink.lines(ln, 1, 1.0f, 0.74f, 0.90f, 1f, 0.60f * gain)
+            ln[0] = xm; ln[1] = py(top + len * 0.5f); ln[2] = xt; ln[3] = py(top + len)
+            sink.lines(ln, 1, 1.0f, 0.74f, 0.90f, 1f, 0.25f * gain)
             ln[0] = x; ln[1] = py(bot); ln[2] = x; ln[3] = py(bot - len * 1.6f)
             sink.lines(ln, 1, 1.0f, 0.74f, 0.90f, 1f, 0.16f * gain)
         }
+}
+
+/** Glowing crest lines riding the top of the tide (front) and a dimmer cyan one behind it, so the wave peaks read clearly. */
+internal fun DeepCanvas.crestLayer(sink: DcSink, t: Float, bass: Float, mid: Float, hi: Float, beat: Float, gain: Float) {
+    val lvl = (0.65f + 0.8f * bass + 0.45f * mid).coerceIn(0f, 1.3f)
+    for (pass in 0 until 2) {
+        for (c in 0 until NC) {
+            val xn = (c + 0.5f) / NC
+            val e = at(ex, xn); val ee = at(ey, xn); val bv = at(bnd, xn)
+            var y: Float
+            if (pass == 0) {
+                y = tideY((xn + 0.13f) % 1f, t * 0.8f + 2.1f, bass, mid, hi, e, bv) * 0.75f + 0.16f
+            } else {
+                y = tideY(xn, t, bass, mid, hi, e, bv) + tideHw(ee, bv, beat) + 0.02f
+            }
+            ln[c * 2] = px(xn); ln[c * 2 + 1] = py(y)
+        }
+        var k = NC - 2
+        while (k >= 0) {
+            val x0 = ln[k * 2]; val y0 = ln[k * 2 + 1]; val x1 = ln[k * 2 + 2]; val y1 = ln[k * 2 + 3]
+            ln[k * 4] = x0; ln[k * 4 + 1] = y0; ln[k * 4 + 2] = x1; ln[k * 4 + 3] = y1
+            k--
+        }
+        if (pass == 0) {
+            sink.lines(ln, NC - 1, 4.0f, 0.25f, 0.80f, 1f, 0.10f * lvl * gain)
+            sink.lines(ln, NC - 1, 1.2f, 0.35f, 0.92f, 1f, min(1f, 0.42f * lvl) * gain)
+        } else {
+            sink.lines(ln, NC - 1, 8.0f, 0.50f, 0.45f, 1f, 0.16f * lvl * gain)
+            sink.lines(ln, NC - 1, 3.0f, 0.62f, 0.62f, 1f, 0.35f * lvl * gain)
+            sink.lines(ln, NC - 1, 1.5f, 0.92f, 0.94f, 1f, min(1f, 0.85f * lvl) * gain)
+        }
+    }
 }

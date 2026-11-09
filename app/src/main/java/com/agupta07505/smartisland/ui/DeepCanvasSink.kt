@@ -16,6 +16,7 @@ internal class AndroidDcSink : DcSink {
     var canvas: Canvas? = null
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+    private val paintOver = Paint(Paint.ANTI_ALIAS_FLAG)
     private val sprite: Bitmap = makeSprite()
     private val src = Rect(0, 0, SPR, SPR)
     private val dst = RectF()
@@ -89,6 +90,34 @@ internal class AndroidDcSink : DcSink {
         paint.style = Paint.Style.FILL
         paint.color = argb(a, r, g, b)
         c.drawRect(x0, y0, x1, y1, paint)
+    }
+
+    override fun overDots(xy: FloatArray, n: Int, size: Float, r: Float, g: Float, b: Float, a: Float) {
+        val c = canvas ?: return
+        if (a < 0.01f) return
+        paintOver.style = Paint.Style.STROKE
+        paintOver.strokeCap = Paint.Cap.ROUND
+        paintOver.strokeWidth = size
+        paintOver.color = argb(a, r, g, b)
+        c.drawPoints(xy, 0, n * 2, paintOver)
+    }
+
+    override fun overLines(xy: FloatArray, n: Int, width: Float, r: Float, g: Float, b: Float, a: Float) {
+        val c = canvas ?: return
+        if (a < 0.01f) return
+        paintOver.style = Paint.Style.STROKE
+        paintOver.strokeCap = Paint.Cap.BUTT
+        paintOver.strokeWidth = width
+        paintOver.color = argb(a, r, g, b)
+        c.drawLines(xy, 0, n * 4, paintOver)
+    }
+
+    override fun overRect(x0: Float, y0: Float, x1: Float, y1: Float, r: Float, g: Float, b: Float, a: Float) {
+        val c = canvas ?: return
+        if (a < 0.01f) return
+        paintOver.style = Paint.Style.FILL
+        paintOver.color = argb(a, r, g, b)
+        c.drawRect(x0, y0, x1, y1, paintOver)
     }
 
     private companion object {
