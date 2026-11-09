@@ -9,10 +9,10 @@ float3 tide(float x, float y, float4 e, float bv, float pxy) {
     float mid = uAux.y;
     float hi = uAux.z;
     float bt = uAux.w;
-    float swell = 0.12 * sin(x * 33.0 + t * 2.7 + 1.3) * (0.45 + 1.2 * bass)
-        + 0.075 * sin(x * 55.0 - t * 3.6) * (0.4 + 1.3 * mid)
-        + 0.045 * sin(x * 89.0 + t * 5.1) * (0.3 + 2.4 * hi)
-        + 0.05 * bt * sin(x * 21.0 + t * 8.0);
+    float swell = 0.12 * sin(x * 33.0 + t * 4.6 + 1.3) * (0.45 + 1.2 * bass)
+        + 0.075 * sin(x * 55.0 - t * 6.2) * (0.4 + 1.3 * mid)
+        + 0.045 * sin(x * 89.0 + t * 8.8) * (0.3 + 2.4 * hi)
+        + 0.05 * bt * sin(x * 21.0 + t * 12.0);
     float yT = -0.08 + swell + e.x * 0.10 + (bv - 0.30) * 0.30;
     float hw = 0.06 + 0.15 * clamp(e.y * 1.4, 0.0, 1.0) + 0.04 * bv;
     float cw = uRes.y * 0.028;

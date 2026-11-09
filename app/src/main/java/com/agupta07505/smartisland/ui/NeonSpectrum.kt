@@ -72,12 +72,12 @@ fun NeonSpectrum(
     val dcanvas = remember { DeepCanvas() }
     val failed = remember { BoolBox(false) }
 
-    // ~30 fps is plenty for this effect and keeps the GPU/CPU free for the foreground app.
+    // Follows the display (60 fps); adaptive quality below keeps it fluid on a busy GPU.
     // The loop parks itself ~1.8 s after the music pauses (nothing moves any more).
     LaunchedEffect(isPlaying) {
         SystemAudioCapture.setPlaying(isPlaying)
         var last = 0L
-        var avg = 0.034f
+        var avg = 0.0167f
         var slow = 0f
         var fast = 0f
         var downs = 0
@@ -86,16 +86,16 @@ fun NeonSpectrum(
             delay(FRAME_GAP_MS)
             var park = false
             androidx.compose.runtime.withFrameNanos { n ->
-                val raw = if (last == 0L) 0.034f else (n - last) / 1e9f
+                val raw = if (last == 0L) 0.0167f else (n - last) / 1e9f
                 last = n
                 val dt = raw.coerceIn(0.001f, 0.1f)
                 if (t0 == 0L) t0 = n
-                // adaptive detail: drop quality if frames cannot keep ~20 fps, restore slowly when they can
+                // adaptive detail: drop quality if the GPU cannot hold ~45 fps, restore slowly when it can
                 avg += (raw.coerceAtMost(0.25f) - avg) * 0.08f
-                if (avg > 0.050f) { slow += dt; fast = 0f } else if (avg < 0.041f) { fast += dt; slow = 0f } else { slow = 0f; fast = 0f }
+                if (avg > 0.024f) { slow += dt; fast = 0f } else if (avg < 0.0185f) { fast += dt; slow = 0f } else { slow = 0f; fast = 0f }
                 if (slow > 1.2f && quality[0] > 0.35f) {
                     quality[0] = if (quality[0] > 0.6f) 0.5f else 0.3f
-                    downs++; slow = 0f; avg = 0.034f
+                    downs++; slow = 0f; avg = 0.0167f
                 } else if (fast > 8f && quality[0] < 1f && downs < 2) {
                     quality[0] = if (quality[0] < 0.4f) 0.5f else 1f
                     fast = 0f
@@ -143,7 +143,7 @@ fun NeonSpectrum(
     }
 }
 
-private const val FRAME_GAP_MS = 24L
+private const val FRAME_GAP_MS = 4L
 
 private class BoolBox(var value: Boolean)
 

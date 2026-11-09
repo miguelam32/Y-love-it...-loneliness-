@@ -21,6 +21,13 @@ float hash(float2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+float vnz(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + float2(1.0, 0.0)), f.x), mix(hash(i + float2(0.0, 1.0)), hash(i + float2(1.0, 1.0)), f.x), f.y);
+}
+
 // DEEP FIELD gradient: cyan -> blue -> violet -> magenta
 float3 gradc(float u) {
     u = clamp(u, 0.0, 1.0);
