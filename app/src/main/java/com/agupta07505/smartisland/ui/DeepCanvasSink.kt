@@ -8,6 +8,7 @@ import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
+import android.util.SparseArray
 import kotlin.math.exp
 
 /** Draws [DeepCanvas] output on a real android.graphics.Canvas with additive blending. */
@@ -18,6 +19,24 @@ internal class AndroidDcSink : DcSink {
     private val sprite: Bitmap = makeSprite()
     private val src = Rect(0, 0, SPR, SPR)
     private val dst = RectF()
+    private val filters = SparseArray<PorterDuffColorFilter>()
+
+    /** Tint filters are cached (5 bits per channel) so the glow path allocates nothing per frame. */
+    private fun tint(r: Float, g: Float, b: Float): PorterDuffColorFilter {
+        val qr = (r * 31f + 0.5f).toInt().coerceIn(0, 31)
+        val qg = (g * 31f + 0.5f).toInt().coerceIn(0, 31)
+        val qb = (b * 31f + 0.5f).toInt().coerceIn(0, 31)
+        val key = (qr shl 10) or (qg shl 5) or qb
+        var f = filters.get(key)
+        if (f == null) {
+            f = PorterDuffColorFilter(
+                (0xFF shl 24) or ((qr * 255 / 31) shl 16) or ((qg * 255 / 31) shl 8) or (qb * 255 / 31),
+                PorterDuff.Mode.SRC_IN
+            )
+            filters.put(key, f)
+        }
+        return f
+    }
 
     private fun ch(v: Float): Int = (v * 255f + 0.5f).toInt().coerceIn(0, 255)
     private fun argb(a: Float, r: Float, g: Float, b: Float): Int = (ch(a) shl 24) or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
@@ -46,7 +65,7 @@ internal class AndroidDcSink : DcSink {
         val c = canvas ?: return
         if (a < 0.01f) return
         paint.style = Paint.Style.FILL
-        paint.colorFilter = PorterDuffColorFilter(argb(1f, r, g, b), PorterDuff.Mode.SRC_IN)
+        paint.colorFilter = tint(r, g, b)
         paint.alpha = ch(a)
         dst.set(cx - rx, cy - ry, cx + rx, cy + ry)
         c.drawBitmap(sprite, src, dst, paint)

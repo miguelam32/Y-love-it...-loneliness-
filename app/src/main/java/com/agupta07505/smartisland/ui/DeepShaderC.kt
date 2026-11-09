@@ -8,11 +8,11 @@ float3 tide(float x, float y, float4 e, float bv, float pxy) {
     float bass = uAux.x;
     float mid = uAux.y;
     float hi = uAux.z;
-    float swell = 0.16 * sin(x * 3.4 + t * 0.55 + 1.3) * (0.5 + 0.9 * bass)
-        + 0.08 * sin(x * 6.2 - t * 0.8) * (0.4 + mid)
-        + 0.04 * sin(x * 10.0 + t * 1.3) * (0.3 + 2.0 * hi);
-    float yT = -0.06 + swell + e.x * 0.08;
-    float hw = 0.075 + 0.20 * clamp(e.y * 1.4, 0.0, 1.0) + 0.05 * bv;
+    float swell = 0.12 * sin(x * 33.0 + t * 0.85 + 1.3) * (0.5 + 0.9 * bass)
+        + 0.075 * sin(x * 55.0 - t * 1.2) * (0.4 + mid)
+        + 0.04 * sin(x * 89.0 + t * 1.7) * (0.3 + 2.0 * hi);
+    float yT = -0.08 + swell + e.x * 0.08 + (bv - 0.35) * 0.16;
+    float hw = 0.06 + 0.15 * clamp(e.y * 1.4, 0.0, 1.0) + 0.04 * bv;
     float cw = uRes.y * 0.028;
     float ci = floor(x * uRes.x / cw);
     float s = 0.0;
@@ -66,6 +66,7 @@ float3 tide(float x, float y, float4 e, float bv, float pxy) {
 float3 layers(float x, float y, float4 e, float bv) {
     float pxy = 2.0 / uRes.y;
     float3 col = aurora(x, y, e, bv, pxy);
+    col += scopeLines(x, y, pxy, 0.40 + 0.60 * clamp((uAux.x + uAux.y + uAux.z) * 1.6, 0.0, 1.0));
     col += terrain(x, y, bv, pxy);
     col += tide(x, y, e, bv, pxy);
     return col;

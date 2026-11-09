@@ -1,5 +1,6 @@
 package com.agupta07505.smartisland.ui
 
+import com.agupta07505.smartisland.util.PcmAnalyzer
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
@@ -53,14 +54,43 @@ internal fun DeepCanvas.auroraLayer(sink: DcSink, t: Float, bass: Float, mid: Fl
             val g = gcol[(xn * 7f + 0.5f).toInt().coerceIn(0, 7)]
             sink.glow(px(xn), py(ya), w / 8f * 1.2f, h * 0.20f, g[0], g[1], g[2], min(1f, 0.13f * (0.55f + 0.9f * bass + 0.7f * mid + 0.6f * bv)) * gain)
         }
-        // thin PCM line
-        var s = 0
-        for (c in 0 until NC - 1) {
-            val xa = (c + 0.5f) / NC; val xb = (c + 1.5f) / NC
-            ln[s] = px(xa); ln[s + 1] = py(auroraY(xa, t, bass, mid, hi, ex[c]) + 0.03f + ex[c] * 0.20f)
-            ln[s + 2] = px(xb); ln[s + 3] = py(auroraY(xb, t, bass, mid, hi, ex[c + 1]) + 0.03f + ex[c + 1] * 0.20f)
-            s += 4
-        }
-        sink.lines(ln, (NC - 1), 3.4f, 0.55f, 0.65f, 1f, 0.10f * gain)
-        sink.lines(ln, (NC - 1), 1.1f, 0.86f, 0.92f, 1f, min(1f, 0.55f + 0.5f * hi) * gain)
+}
+
+/** Back lines: the real PCM waveform (zero-cross triggered, slowly smoothed) as glowing neon lines. */
+internal fun DeepCanvas.scopeLayer(sink: DcSink, data: FloatArray, level: Float, gain: Float) {
+    val act = (0.40f + 0.60f * (level * 1.6f).coerceIn(0f, 1f)) * gain
+    val yc = 0.30f
+    val amp = 0.66f
+    val nb = PcmAnalyzer.SCOPE_B
+    for (q in 0 until nb) {
+        val xn = q / (nb - 1f)
+        ln[q * 2] = px(xn)
+        ln[q * 2 + 1] = py(yc + 0.03f + 0.75f * amp * data[PcmAnalyzer.SCOPE_B_OFF + q])
+    }
+    segs(nb, sink, act, true)
+    val na = PcmAnalyzer.SCOPE_N
+    for (p in 0 until na) {
+        val xn = p / (na - 1f)
+        ln[p * 2] = px(xn)
+        ln[p * 2 + 1] = py(yc + amp * data[PcmAnalyzer.SCOPE_OFF + p])
+    }
+    segs(na, sink, act, false)
+}
+
+private fun DeepCanvas.segs(n: Int, sink: DcSink, act: Float, echo: Boolean) {
+    // polyline points live in ln[0 until 2n]; expand them into n-1 segments (reverse order so the in-place copy is safe)
+    var k = n - 2
+    while (k >= 0) {
+        val x0 = ln[k * 2]; val y0 = ln[k * 2 + 1]; val x1 = ln[k * 2 + 2]; val y1 = ln[k * 2 + 3]
+        ln[k * 4] = x0; ln[k * 4 + 1] = y0; ln[k * 4 + 2] = x1; ln[k * 4 + 3] = y1
+        k--
+    }
+    if (echo) {
+        sink.lines(ln, n - 1, 5.0f, 0.55f, 0.40f, 1f, 0.10f * act)
+        sink.lines(ln, n - 1, 1.6f, 0.62f, 0.45f, 1f, 0.50f * act)
+    } else {
+        sink.lines(ln, n - 1, 7.0f, 0.30f, 0.80f, 1f, 0.12f * act)
+        sink.lines(ln, n - 1, 3.0f, 0.30f, 0.92f, 1f, 0.34f * act)
+        sink.lines(ln, n - 1, 1.3f, 0.88f, 0.97f, 1f, min(1f, 0.95f * act))
+    }
 }

@@ -143,6 +143,7 @@ internal class DeepCanvas {
         }
 
         auroraLayer(sink, t, bass, mid, hi, lowQ, gain)
+        scopeLayer(sink, data, bass + mid + hi, gain)
         terrainLayer(sink, t, bass, mid, quality, lowQ, gain)
         tideLayer(sink, t, bass, mid, hi, beat, lowQ, gain)
         batch.flushAll()
@@ -151,25 +152,25 @@ internal class DeepCanvas {
     }
 
     internal fun auroraY(x: Float, t: Float, bass: Float, mid: Float, hi: Float, e: Float): Float =
-        0.56f + 0.17f * sin(x * 2.9f + t * 0.30f + 0.6f) * (0.55f + 0.9f * bass) +
-            0.10f * sin(x * 6.4f - t * 0.52f + 1.9f) * (0.40f + 1.0f * mid) +
-            0.045f * sin(x * 13.0f + t * 0.9f) * (0.30f + 2.0f * hi) + e * 0.12f
+        0.56f + 0.15f * sin(x * 13.0f + t * 0.34f + 0.6f) * (0.55f + 0.9f * bass) +
+            0.09f * sin(x * 27.0f - t * 0.55f + 1.9f) * (0.40f + 1.0f * mid) +
+            0.045f * sin(x * 46.0f + t * 0.9f) * (0.30f + 2.0f * hi) + e * 0.12f
 
     internal fun terrH(x: Float, z: Float, t: Float, bass: Float, mid: Float): Float {
         val zf = z + t * 0.05f
-        val sw = sin(x * 4.4f + zf * 7.0f + t * 0.25f) * 0.9f +
-            0.6f * sin(x * 7.8f - zf * 11.0f - t * 0.35f) +
-            0.35f * sin(x * 13.0f + zf * 17.0f)
+        val sw = sin(x * 19.0f + zf * 7.0f + t * 0.30f) * 0.9f +
+            0.6f * sin(x * 33.0f - zf * 11.0f - t * 0.42f) +
+            0.35f * sin(x * 54.0f + zf * 17.0f)
         return sw * (0.45f + 0.9f * mid + 0.5f * bass)
     }
 
-    internal fun tideY(x: Float, t: Float, bass: Float, mid: Float, hi: Float, e: Float): Float {
-        val swell = 0.16f * sin(x * 3.4f + t * 0.55f + 1.3f) * (0.5f + 0.9f * bass) +
-            0.08f * sin(x * 6.2f - t * 0.8f) * (0.4f + mid) +
-            0.04f * sin(x * 10.0f + t * 1.3f) * (0.3f + 2.0f * hi)
-        return -0.06f + swell + e * 0.08f
+    internal fun tideY(x: Float, t: Float, bass: Float, mid: Float, hi: Float, e: Float, bv: Float): Float {
+        val swell = 0.12f * sin(x * 33.0f + t * 0.85f + 1.3f) * (0.5f + 0.9f * bass) +
+            0.075f * sin(x * 55.0f - t * 1.2f) * (0.4f + mid) +
+            0.04f * sin(x * 89.0f + t * 1.7f) * (0.3f + 2.0f * hi)
+        return -0.08f + swell + e * 0.08f + (bv - 0.35f) * 0.16f
     }
 
     internal fun tideHw(ee: Float, bv: Float, beat: Float): Float =
-        0.075f + 0.20f * (ee * 1.4f).coerceIn(0f, 1f) + 0.05f * bv + 0.0f * beat
+        0.06f + 0.15f * (ee * 1.4f).coerceIn(0f, 1f) + 0.04f * bv + 0.0f * beat
 }

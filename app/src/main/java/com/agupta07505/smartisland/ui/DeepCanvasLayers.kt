@@ -79,7 +79,7 @@ internal fun DeepCanvas.tideLayer(sink: DcSink, t: Float, bass: Float, mid: Floa
                 val xn = (ci + 0.2f + 0.6f * h1) / n
                 if (xn < 0f || xn > 1f) continue
                 val e = at(ex, xn); val ee = at(ey, xn); val bv = at(bnd, xn)
-                val yT = tideY(xn, t, bass, mid, hi, e)
+                val yT = tideY(xn, t, bass, mid, hi, e, bv)
                 val hw = tideHw(ee, bv, beat)
                 val yb = yT + hw * (1f - 2f * h2 * h2)
                 val tw = 0.75f + 0.25f * sin(t * (2f + 4f * h3) + h2 * 40f)
@@ -93,7 +93,7 @@ internal fun DeepCanvas.tideLayer(sink: DcSink, t: Float, bass: Float, mid: Floa
         for (m in 0 until 12) {
             val xn = (m + 0.5f) / 12f
             val e = at(ex, xn); val ee = at(ey, xn); val bv = at(bnd, xn)
-            val yT = tideY(xn, t, bass, mid, hi, e)
+            val yT = tideY(xn, t, bass, mid, hi, e, bv)
             val hw = tideHw(ee, bv, beat)
             val lvl = 0.75f + 0.9f * bass + 0.5f * mid + 0.5f * bv
             val mx = 0.5f + 0.5f * xn
@@ -112,7 +112,7 @@ internal fun DeepCanvas.tideLayer(sink: DcSink, t: Float, bass: Float, mid: Floa
             val bvn = at(bnd, xn)
             val len = (0.03f + bvn) * (0.25f + 0.75f * hs2) * (0.40f + 0.8f * bass)
             val e = at(ex, xn); val ee = at(ey, xn)
-            val yT = tideY(xn, t, bass, mid, hi, e)
+            val yT = tideY(xn, t, bass, mid, hi, e, bvn)
             val hw = tideHw(ee, bvn, beat)
             val top = yT + hw
             val bot = yT - hw

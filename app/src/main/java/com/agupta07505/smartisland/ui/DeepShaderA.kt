@@ -8,6 +8,8 @@ uniform float4 uAux;
 uniform float2 uEnv[40];
 uniform float uBand[24];
 uniform float uBeat[40];
+uniform float4 uScA[24];
+uniform float4 uScB[12];
 uniform float4 uImp;
 uniform float3 uK;
 uniform float uFrac;
@@ -62,6 +64,35 @@ float bandAt(float x) {
         v += uBand[i] * max(0.0, 1.0 - abs(bx - float(i)));
     }
     return v;
+}
+
+// real PCM waveform lines (A: 96 pts, B: 48 pts). returns (fA, dfA/dx, fB, dfB/dx), smooth (C1) interpolation
+float4 scopeAt(float x) {
+    float bxa = clamp(x, 0.0, 1.0) * 95.0;
+    float bxb = clamp(x, 0.0, 1.0) * 47.0;
+    float fa = 0.0;
+    float da = 0.0;
+    float fb = 0.0;
+    float db = 0.0;
+    for (int i = 0; i < 24; i++) {
+        float k = float(i) * 4.0;
+        float4 d = bxa - float4(k, k + 1.0, k + 2.0, k + 3.0);
+        float4 w = max(float4(0.0), 1.0 - abs(d));
+        float4 sw = w * w * (3.0 - 2.0 * w);
+        float4 dw = 6.0 * w * (1.0 - w) * (-sign(d));
+        fa += dot(uScA[i], sw);
+        da += dot(uScA[i], dw);
+    }
+    for (int i = 0; i < 12; i++) {
+        float k = float(i) * 4.0;
+        float4 d = bxb - float4(k, k + 1.0, k + 2.0, k + 3.0);
+        float4 w = max(float4(0.0), 1.0 - abs(d));
+        float4 sw = w * w * (3.0 - 2.0 * w);
+        float4 dw = 6.0 * w * (1.0 - w) * (-sign(d));
+        fb += dot(uScB[i], sw);
+        db += dot(uScB[i], dw);
+    }
+    return float4(fa, da * 95.0, fb, db * 47.0);
 }
 
 // expanding light ring born at every detected beat (the "golpe de luz")

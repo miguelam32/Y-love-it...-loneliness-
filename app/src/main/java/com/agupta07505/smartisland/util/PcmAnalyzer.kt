@@ -20,6 +20,8 @@ import kotlin.math.sqrt
  *   [0 until COLS*2)            interleaved min,max per column (oldest -> newest), -1..1
  *   [BANDS_OFF until +NB)       band levels 0..1 (smoothed)
  *   [AUX_OFF + 0..5)            bass, mid, high, beat, level
+ *   [SCOPE_OFF until +SCOPE_N)  real waveform (trigger-locked scope), -1..1, slow-smoothed
+ *   [SCOPE_B_OFF until +SCOPE_B) same waveform, heavier smoothing (echo line)
  */
 class PcmAnalyzer(private val rate: Int) {
     companion object {
@@ -44,7 +46,18 @@ class PcmAnalyzer(private val rate: Int) {
         const val IMP_OFF = AUX_OFF + 5
         const val BEAT_OFF = IMP_OFF + 7
         const val FRAC_OFF = BEAT_OFF + COLS
-        const val OUT_SIZE = FRAC_OFF + 1
+        const val SCOPE_N = 96
+        const val SCOPE_B = 48
+        const val SCOPE_OFF = FRAC_OFF + 1
+        const val SCOPE_B_OFF = SCOPE_OFF + SCOPE_N
+        const val OUT_SIZE = SCOPE_B_OFF + SCOPE_B
+        /** Scope tuning: window shown (ms) and smoothing time constants (s). Bigger tau = slower, calmer line. */
+        const val SCOPE_MS = 46.0
+        const val SCOPE_TAU_A = 0.14f
+        const val SCOPE_TAU_B = 0.45f
+        const val SCOPE_FC = 320.0
+        private const val RMASK = 8191
+        private const val TMP_N = 5200
     }
 
     private val fc = DoubleArray(NB)
@@ -81,6 +94,14 @@ class PcmAnalyzer(private val rate: Int) {
     private var impU = 0.3f
     private var impSeed = 1
 
+    private val sRing = FloatArray(RMASK + 1)
+    private var sPos = 0
+    private val scopeA = FloatArray(SCOPE_N)
+    private val scopeB = FloatArray(SCOPE_B)
+    private val scopeRaw = FloatArray(SCOPE_N)
+    private val sTmp = FloatArray(TMP_N)
+    private var scopeRms = 0.05f
+
     init {
         fun erb(f: Double) = 21.4 * log10(1 + 0.00437 * f)
         fun inv(e: Double) = (10.0.pow(e / 21.4) - 1) / 0.00437
@@ -108,6 +129,8 @@ class PcmAnalyzer(private val rate: Int) {
             var s = 0f
             for (c in 0 until ch) s += pcm[n * ch + c]
             s = s / ch / 32768f
+            sRing[sPos and RMASK] = s
+            sPos++
             // column min/max
             if (s < cMin) cMin = s
             if (s > cMax) cMax = s
@@ -169,6 +192,59 @@ class PcmAnalyzer(private val rate: Int) {
         beat *= exp(-COL_MS / 170.0)
     }
 
+    /** Soft limiter: keeps the wave inside -1..1 without flattening the peaks. */
+    private fun lift(x: Float): Float = (1.5f * x / (1f + abs(x))).coerceIn(-1f, 1f)
+
+    /**
+     * Real waveform: the audio is low-passed (SCOPE_FC) so it reads as a clean up/down wave, the latest rising
+     * zero crossing starts a SCOPE_MS window, and that window is box-averaged to SCOPE_N points.
+     */
+    private fun buildScope(dt: Float, out: FloatArray) {
+        val win = max(256, min(3200, (rate * SCOPE_MS / 1000.0).toInt()))
+        val back = min(1800, TMP_N - win - 8)
+        val span = back + win
+        val start0 = sPos - span
+        val al = 1f - exp(-2.0 * PI * SCOPE_FC / rate).toFloat()
+        var l1 = 0f
+        var l2 = 0f
+        var trig = back
+        var prev = 0f
+        for (k in 0 until span) {
+            val v = sRing[(start0 + k) and RMASK]
+            l1 += (v - l1) * al
+            l2 += (l1 - l2) * al
+            sTmp[k] = l2
+            if (k in 100 until back && prev < 0f && l2 >= 0f && l2 - prev > 1e-6f) trig = k
+            prev = l2
+        }
+        var sq = 0f
+        val stp = win.toFloat() / SCOPE_N
+        for (p in 0 until SCOPE_N) {
+            val i0 = trig + (p * stp).toInt()
+            val i1 = max(i0 + 1, trig + ((p + 1) * stp).toInt())
+            var acc = 0f
+            for (i in i0 until i1) acc += sTmp[i]
+            val v = acc / (i1 - i0)
+            scopeRaw[p] = v
+            sq += v * v
+        }
+        val rmsNow = sqrt(sq / SCOPE_N)
+        scopeRms += (rmsNow - scopeRms) * (1f - exp(-dt / (if (rmsNow > scopeRms) 0.15f else 1.4f)))
+        val g = min(30f, 0.85f / max(scopeRms, 0.012f))
+        val ka = 1f - exp(-dt / SCOPE_TAU_A)
+        val kb = 1f - exp(-dt / SCOPE_TAU_B)
+        for (p in 0 until SCOPE_N) {
+            val v = lift(scopeRaw[p] * g)
+            scopeA[p] += (v - scopeA[p]) * ka
+            out[SCOPE_OFF + p] = scopeA[p]
+        }
+        for (q in 0 until SCOPE_B) {
+            val v = lift((scopeRaw[2 * q] + scopeRaw[2 * q + 1]) * 0.5f * g)
+            scopeB[q] += (v - scopeB[q]) * kb
+            out[SCOPE_B_OFF + q] = scopeB[q]
+        }
+    }
+
     /** dt in seconds since last snapshot. out.size must be >= OUT_SIZE. */
     @Synchronized
     fun snapshot(out: FloatArray, dt: Float) {
@@ -180,6 +256,7 @@ class PcmAnalyzer(private val rate: Int) {
             out[BEAT_OFF + k] = ringBeat[idx]
         }
         out[FRAC_OFF] = colCount.toFloat() / colLen
+        buildScope(dt, out)
         val ka = 1 - exp(-dt / 0.025f); val kr = 1 - exp(-dt / 0.14f)
         for (i in 0 until NB) {
             disp[i] += (target[i] - disp[i]) * (if (target[i] > disp[i]) ka else kr)

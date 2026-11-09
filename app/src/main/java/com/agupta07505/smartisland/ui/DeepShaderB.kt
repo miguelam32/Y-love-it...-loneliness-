@@ -8,9 +8,9 @@ float3 aurora(float x, float y, float4 e, float bv, float pxy) {
     float bass = uAux.x;
     float mid = uAux.y;
     float hi = uAux.z;
-    float ya = 0.56 + 0.17 * sin(x * 2.9 + t * 0.30 + 0.6) * (0.55 + 0.9 * bass)
-        + 0.10 * sin(x * 6.4 - t * 0.52 + 1.9) * (0.40 + 1.0 * mid)
-        + 0.045 * sin(x * 13.0 + t * 0.9) * (0.30 + 2.0 * hi) + e.x * 0.12;
+    float ya = 0.56 + 0.15 * sin(x * 13.0 + t * 0.34 + 0.6) * (0.55 + 0.9 * bass)
+        + 0.09 * sin(x * 27.0 - t * 0.55 + 1.9) * (0.40 + 1.0 * mid)
+        + 0.045 * sin(x * 46.0 + t * 0.9) * (0.30 + 2.0 * hi) + e.x * 0.12;
     float sg = 0.11 + 0.20 * clamp(e.y * 1.6, 0.0, 1.0) + 0.10 * bv;
     float cw = uRes.y * 0.040;
     float n = uRes.x / cw;
@@ -48,19 +48,39 @@ float3 aurora(float x, float y, float4 e, float bv, float pxy) {
     float qg = 1.0 + 0.8 * (1.0 - uQ);
     float3 col = cc * inten * 0.62 * qg * lvl + float3(0.90, 0.95, 1.0) * white * 0.9 * qg * lvl;
     col += cc * exp(-dyc * dyc * 1.2) * 0.16 * lvl;
-    // thin PCM line riding the cloud
-    float yl = ya + 0.03 + e.x * 0.20;
-    float dl = (y - yl) / pxy;
-    col += float3(0.86, 0.92, 1.0) * (exp(-dl * dl * 1.4) * (0.55 + 0.5 * hi) + exp(-dl * dl * 0.05) * 0.06);
     return col;
+}
+
+// BACK LINES: the real PCM waveform (zero-cross triggered, slowly smoothed) as glowing neon lines
+float3 scopeLines(float x, float y, float pxy, float act) {
+    float yc = 0.30;
+    float amp = 0.66;
+    float3 col = float3(0.0);
+    if (abs(y - yc) < amp + 0.34) {
+        float4 s = scopeAt(x);
+        float sp = 0.5 * uRes.y / uRes.x;
+        float ya = yc + amp * s.x;
+        float sa = s.y * amp * sp;
+        float da = (y - ya) / pxy / sqrt(1.0 + sa * sa);
+        float ab = 0.75 * amp;
+        float yb = yc + 0.03 + ab * s.z;
+        float sb = s.w * ab * sp;
+        float db = (y - yb) / pxy / sqrt(1.0 + sb * sb);
+        float3 ca = mix(float3(0.30, 0.92, 1.0), float3(0.72, 0.50, 1.0), x);
+        float3 cb = mix(float3(0.62, 0.40, 1.0), float3(0.25, 0.75, 1.0), x);
+        col += ca * (exp(-da * da * 0.34) * 0.90 + exp(-da * da * 0.045) * 0.34 + exp(-da * da * 0.004) * 0.06);
+        col += float3(0.90, 0.97, 1.0) * exp(-da * da * 1.8) * 0.55;
+        col += cb * (exp(-db * db * 0.30) * 0.50 + exp(-db * db * 0.020) * 0.22 + exp(-db * db * 0.002) * 0.05);
+    }
+    return col * act;
 }
 
 float terrH(float x, float z) {
     float t = uT.x;
     float zf = z + t * 0.05;
-    float sw = sin(x * 4.4 + zf * 7.0 + t * 0.25) * 0.9
-        + 0.6 * sin(x * 7.8 - zf * 11.0 - t * 0.35)
-        + 0.35 * sin(x * 13.0 + zf * 17.0);
+    float sw = sin(x * 19.0 + zf * 7.0 + t * 0.30) * 0.9
+        + 0.6 * sin(x * 33.0 - zf * 11.0 - t * 0.42)
+        + 0.35 * sin(x * 54.0 + zf * 17.0);
     return sw * (0.45 + 0.9 * uAux.y + 0.5 * uAux.x);
 }
 

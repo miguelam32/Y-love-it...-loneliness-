@@ -1,10 +1,12 @@
 package com.agupta07505.smartisland.util
 
 import android.media.audiofx.Visualizer
+import android.os.SystemClock
 import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.SocketTimeoutException
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Audio source for the island visualizer.
  * Primary: PCM over UDP 127.0.0.1:4215 sent by Loved (tag 0x01 format, 0x02 PCM16LE, 0x03 transition).
- * Fallback: audiofx.Visualizer loudness (needs RECORD_AUDIO) driving a synthetic signal.
+ * Fallback: audiofx.Visualizer loudness (needs RECORD_AUDIO) driving a synthetic signal. It is started LAZILY,
+ * only when music plays and no UDP PCM arrives for a few seconds, so it never loads the audio chain while Loved streams PCM.
  * The UI pulls frames with [snapshot] (PcmAnalyzer.OUT_SIZE floats).
  */
 object SystemAudioCapture {
@@ -21,16 +24,24 @@ object SystemAudioCapture {
     const val UDP_PORT = 4215
     const val UDP_ENABLED = true
     const val BAR_COUNT = 3
+    private const val UDP_STALE_MS = 250L
+    private const val VIZ_AFTER_MS = 2500L
+    private const val FREEZE_AFTER_MS = 2500L
 
     @Volatile private var analyzer = PcmAnalyzer(44100)
     @Volatile private var rate = 44100
     @Volatile private var channels = 2
     @Volatile private var lastUdpMs = 0L
+    @Volatile private var lastVizMs = 0L
+    @Volatile private var lastActiveMs = 0L
+    @Volatile private var playing = false
+    @Volatile private var udpAlive = false
     private var refCount = 0
     private var socket: DatagramSocket? = null
     private var thread: Thread? = null
-    private var visualizer: Visualizer? = null
+    @Volatile private var visualizer: Visualizer? = null
     private var seed = 12345
+    private val zeros = ShortArray(20000)
 
     private val _levels = MutableStateFlow(FloatArray(BAR_COUNT))
     val levels: StateFlow<FloatArray> = _levels
@@ -39,8 +50,8 @@ object SystemAudioCapture {
     fun start() {
         refCount++
         if (refCount > 1) return
+        lastActiveMs = SystemClock.uptimeMillis()
         if (UDP_ENABLED) startUdp()
-        startVisualizer()
     }
 
     @Synchronized
@@ -48,24 +59,32 @@ object SystemAudioCapture {
         refCount = (refCount - 1).coerceAtLeast(0)
         if (refCount > 0) return
         try { socket?.close() } catch (_: Throwable) {}
-        socket = null; thread = null
-        try { visualizer?.enabled = false; visualizer?.release() } catch (_: Throwable) {}
-        visualizer = null
-        _levels.value = FloatArray(BAR_COUNT)
+        socket = null; thread = null; udpAlive = false
+        stopViz()
     }
 
     fun isAvailable(): Boolean = UDP_ENABLED || try { Visualizer.getMaxCaptureRate() > 0 } catch (_: Throwable) { false }
 
+    /** The UI tells us whether the player is playing: the Visualizer fallback is only worth its cost then. */
+    fun setPlaying(p: Boolean) {
+        playing = p
+        if (p) lastActiveMs = SystemClock.uptimeMillis()
+        if (p && !udpAlive) Thread { ensureViz() }.also { it.isDaemon = true; it.name = "island-viz" }.start()
+        if (!p) Thread { stopViz() }.also { it.isDaemon = true; it.name = "island-viz" }.start()
+    }
+
     /** Fill [out] (size >= PcmAnalyzer.OUT_SIZE) with the current frame. dt = seconds since last call. */
     fun snapshot(out: FloatArray, dt: Float) {
-        val now = System.currentTimeMillis()
+        val now = SystemClock.uptimeMillis()
         val a = analyzer
-        if (now - lastUdpMs > 250 && now - lastVizMs > 250) {
-            val n = (dt * rate).toInt().coerceIn(1, rate / 10)
-            a.feed(ShortArray(n), n, 1)
+        if (now - lastUdpMs > UDP_STALE_MS && now - lastVizMs > UDP_STALE_MS) {
+            // no audio: let the analyzer decay to silence, then stop doing any work
+            if (now - lastActiveMs < FREEZE_AFTER_MS) {
+                val n = (dt * rate).toInt().coerceIn(1, minOf(rate / 10, zeros.size))
+                a.feed(zeros, n, 1)
+            }
         }
         a.snapshot(out, dt)
-        _levels.value = floatArrayOf(out[PcmAnalyzer.AUX_OFF], out[PcmAnalyzer.AUX_OFF + 1], out[PcmAnalyzer.AUX_OFF + 2])
     }
 
     private fun startUdp() {
@@ -75,16 +94,26 @@ object SystemAudioCapture {
                 val s = DatagramSocket(null)
                 s.reuseAddress = true
                 s.bind(java.net.InetSocketAddress(addr, UDP_PORT))
+                s.soTimeout = 500
                 socket = s
+                udpAlive = true
                 val buf = ByteArray(16384)
                 val pkt = DatagramPacket(buf, buf.size)
                 while (!s.isClosed) {
-                    s.receive(pkt)
-                    handle(buf, pkt.length)
+                    try {
+                        pkt.length = buf.size
+                        s.receive(pkt)
+                        handle(buf, pkt.length)
+                    } catch (_: SocketTimeoutException) {
+                        val now = SystemClock.uptimeMillis()
+                        if (playing && now - lastUdpMs > VIZ_AFTER_MS) ensureViz()
+                    }
                 }
             } catch (e: Throwable) {
                 Log.w(TAG, "UDP stopped: ${e.message}")
             }
+            udpAlive = false
+            if (playing) ensureViz()
         }.also { it.isDaemon = true; it.name = "island-pcm-udp"; it.start() }
     }
 
@@ -109,15 +138,18 @@ object SystemAudioCapture {
                     pcm[i] = ((b[p].toInt() and 0xFF) or (b[p + 1].toInt() shl 8)).toShort()
                     p += 2
                 }
-                lastUdpMs = System.currentTimeMillis()
+                val now = SystemClock.uptimeMillis()
+                lastUdpMs = now
+                lastActiveMs = now
+                if (visualizer != null) stopViz()
                 analyzer.feed(pcm, frames, ch)
             }
         }
     }
 
-    @Volatile private var lastVizMs = 0L
-
-    private fun startVisualizer() {
+    @Synchronized
+    private fun ensureViz() {
+        if (visualizer != null || refCount == 0) return
         try {
             val cr = Visualizer.getMaxCaptureRate()
             if (cr <= 0) return
@@ -126,7 +158,8 @@ object SystemAudioCapture {
                 setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(v: Visualizer?, w: ByteArray?, sr: Int) {
                         w ?: return
-                        if (System.currentTimeMillis() - lastUdpMs < 500) return
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastUdpMs < 500) return
                         var peak = 0
                         for (x in w) peak = maxOf(peak, abs((x.toInt() and 0xFF) - 128))
                         val lvl = peak / 128f
@@ -138,7 +171,8 @@ object SystemAudioCapture {
                             val low = sin(i * 0.07f)
                             pcm[i] = ((noise * 0.5f + low * 0.5f) * lvl * 20000f).toInt().toShort()
                         }
-                        lastVizMs = System.currentTimeMillis()
+                        lastVizMs = now
+                        lastActiveMs = now
                         analyzer.feed(pcm, n, 1)
                     }
                     override fun onFftDataCapture(v: Visualizer?, f: ByteArray?, sr: Int) {}
@@ -149,5 +183,12 @@ object SystemAudioCapture {
             Log.w(TAG, "Visualizer unavailable: ${e.message}")
             visualizer = null
         }
+    }
+
+    @Synchronized
+    private fun stopViz() {
+        val v = visualizer ?: return
+        visualizer = null
+        try { v.enabled = false; v.release() } catch (_: Throwable) {}
     }
 }

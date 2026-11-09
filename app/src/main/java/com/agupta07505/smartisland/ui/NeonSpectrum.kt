@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -48,6 +49,8 @@ fun NeonSpectrum(
     val env = remember { FloatArray(PcmAnalyzer.COLS * 2) }
     val bands = remember { FloatArray(PcmAnalyzer.NB) }
     val beats = remember { FloatArray(PcmAnalyzer.COLS) }
+    val scA = remember { FloatArray(PcmAnalyzer.SCOPE_N) }
+    val scB = remember { FloatArray(PcmAnalyzer.SCOPE_B) }
     val quality = remember { FloatArray(1) { 1f } }
     var tick by remember { mutableLongStateOf(0L) }
     var t0 by remember { mutableLongStateOf(0L) }
@@ -69,30 +72,42 @@ fun NeonSpectrum(
     val dcanvas = remember { DeepCanvas() }
     val failed = remember { BoolBox(false) }
 
-    LaunchedEffect(Unit) {
+    // ~30 fps is plenty for this effect and keeps the GPU/CPU free for the foreground app.
+    // The loop parks itself ~1.8 s after the music pauses (nothing moves any more).
+    LaunchedEffect(isPlaying) {
+        SystemAudioCapture.setPlaying(isPlaying)
         var last = 0L
-        var avg = 0.0167f
+        var avg = 0.034f
         var slow = 0f
         var fast = 0f
         var downs = 0
+        var idle = 0f
         while (true) {
+            delay(FRAME_GAP_MS)
+            var park = false
             androidx.compose.runtime.withFrameNanos { n ->
-                val dt = if (last == 0L) 0.016f else ((n - last) / 1e9f).coerceIn(0.001f, 0.1f)
+                val raw = if (last == 0L) 0.034f else (n - last) / 1e9f
                 last = n
+                val dt = raw.coerceIn(0.001f, 0.1f)
                 if (t0 == 0L) t0 = n
-                // adaptive detail: drop quality if the GPU cannot hold ~45 fps, restore slowly when it can
-                avg += (dt - avg) * 0.05f
-                if (avg > 0.024f) { slow += dt; fast = 0f } else if (avg < 0.0185f) { fast += dt; slow = 0f } else { slow = 0f; fast = 0f }
+                // adaptive detail: drop quality if frames cannot keep ~20 fps, restore slowly when they can
+                avg += (raw.coerceAtMost(0.25f) - avg) * 0.08f
+                if (avg > 0.050f) { slow += dt; fast = 0f } else if (avg < 0.041f) { fast += dt; slow = 0f } else { slow = 0f; fast = 0f }
                 if (slow > 1.2f && quality[0] > 0.35f) {
                     quality[0] = if (quality[0] > 0.6f) 0.5f else 0.3f
-                    downs++; slow = 0f; avg = 0.0167f
+                    downs++; slow = 0f; avg = 0.034f
                 } else if (fast > 8f && quality[0] < 1f && downs < 2) {
                     quality[0] = if (quality[0] < 0.4f) 0.5f else 1f
                     fast = 0f
                 }
                 SystemAudioCapture.snapshot(data, dt)
                 tick = n
+                if (!isPlaying) {
+                    idle += dt
+                    if (idle > 1.8f) park = true
+                }
             }
+            if (park) break
         }
     }
 
@@ -101,11 +116,13 @@ fun NeonSpectrum(
         System.arraycopy(data, 0, env, 0, env.size)
         System.arraycopy(data, PcmAnalyzer.BANDS_OFF, bands, 0, bands.size)
         System.arraycopy(data, PcmAnalyzer.BEAT_OFF, beats, 0, beats.size)
+        System.arraycopy(data, PcmAnalyzer.SCOPE_OFF, scA, 0, scA.size)
+        System.arraycopy(data, PcmAnalyzer.SCOPE_B_OFF, scB, 0, scB.size)
         val time = (n - t0) / 1e9f
         var done = false
         if (shader != null && !failed.value && Build.VERSION.SDK_INT >= 33) {
             try {
-                drawShader(shader, data, env, bands, beats, time, live, quality[0])
+                drawShader(shader, data, env, bands, beats, scA, scB, time, live, quality[0])
                 done = true
             } catch (e: Throwable) {
                 failed.value = true
@@ -125,6 +142,8 @@ fun NeonSpectrum(
         }
     }
 }
+
+private const val FRAME_GAP_MS = 24L
 
 private class BoolBox(var value: Boolean)
 
@@ -153,7 +172,8 @@ private fun makeShader(): RuntimeShader = RuntimeShader(DeepShaderA.SRC + DeepSh
 
 @RequiresApi(33)
 private fun DrawScope.drawShader(
-    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, beats: FloatArray, time: Float, live: Float, quality: Float
+    rs: RuntimeShader, data: FloatArray, env: FloatArray, bands: FloatArray, beats: FloatArray,
+    scA: FloatArray, scB: FloatArray, time: Float, live: Float, quality: Float
 ) {
     rs.setFloatUniform("uRes", size.width, size.height)
     rs.setFloatUniform("uT", time, live)
@@ -165,6 +185,8 @@ private fun DrawScope.drawShader(
     rs.setFloatUniform("uEnv", env)
     rs.setFloatUniform("uBand", bands)
     rs.setFloatUniform("uBeat", beats)
+    rs.setFloatUniform("uScA", scA)
+    rs.setFloatUniform("uScB", scB)
     rs.setFloatUniform("uFrac", data[PcmAnalyzer.FRAC_OFF])
     rs.setFloatUniform("uQ", quality)
     val io = PcmAnalyzer.IMP_OFF

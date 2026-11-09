@@ -25,18 +25,24 @@ half4 main(float2 fc) {
         u.y += b2 * (hash(k2 + gs + 4.0) - 0.5) * 0.16 * e2;
     }
     float chroma = 0.0;
-    if (uAux.w > 0.08 || e2 > 0.01) chroma = 0.0015 + uAux.w * 0.004 + e2 * 0.07;
-    float bsr = e2 * 0.12;
+    if (uAux.w > 0.55 || e2 > 0.03) chroma = 0.0015 + uAux.w * 0.004 + e2 * 0.07;
+    float bsr = e2 * 0.16;
     float3 col = float3(0.0);
-    if (bsr > 0.004) {
+    if (bsr > 0.012) {
         float2 rv = (ic - u) * bsr;
-        for (int i = 0; i < 4; i++) {
+        float ns = 2.0 + step(0.75, uQ);
+        float3 wsum = float3(0.0);
+        for (int i = 0; i < 3; i++) {
             float fi = float(i);
-            float2 q = u + rv * fi;
-            float3 s = scene(float2(q.x, 1.0 - q.y), 0.0);
-            col += s * float3(1.0 - 0.28 * fi, 1.0, 0.16 + 0.28 * fi);
+            if (fi < ns) {
+                float2 q = u + rv * fi;
+                float3 s = scene(float2(q.x, 1.0 - q.y), 0.0);
+                float3 wg = float3(1.0 - 0.38 * fi, 1.0, 0.24 + 0.38 * fi);
+                col += s * wg;
+                wsum += wg;
+            }
         }
-        col = col / float3(2.32, 4.0, 2.32);
+        col = col / wsum;
     } else {
         col = scene(float2(u.x, 1.0 - u.y), chroma);
     }
